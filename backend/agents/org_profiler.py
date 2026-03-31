@@ -24,10 +24,13 @@ logger = logging.getLogger(__name__)
 def _build_org_profiling_agent() -> Agent:
     """Build the org profiling agent with Tavily search tool."""
     try:
-        from crewai_tools import TavilySearchResults
+        from crewai_tools import TavilySearchTool, TavilyExtractorTool
         tavily_key = get_tavily_key()
-        tools = [TavilySearchResults(api_key=tavily_key, max_results=5)]
-        logger.info("Tavily search tool attached to org profiling agent")
+        tools = [
+            TavilySearchTool(api_key=tavily_key),
+            TavilyExtractorTool(api_key=tavily_key),
+        ]
+        logger.info("Tavily search + extractor tools attached to org profiling agent")
     except Exception as e:
         logger.warning(f"Tavily not available: {e}. Running without web search.")
         tools = []
@@ -71,9 +74,11 @@ def _build_profiling_task(
     website_instruction = ""
     if website:
         website_instruction = f"""
-STEP 1: Search the web for information about this organization's website: {website}
-Use the Tavily search tool with query: "site:{website} about company services"
-This will help you understand their actual business better.
+STEP 1: Research this organization's website: {website}
+First, use TavilyExtractorTool with url: "{website}" to extract the actual page content.
+Then, use TavilySearchTool with query: "site:{website} about services products company" for additional context.
+Extract: company name, industry, products/services, regions served, data types handled, customer base.
+This real website content must inform your framework scoring.
 """
 
     return Task(

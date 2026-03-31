@@ -81,9 +81,9 @@ def _build_procedure_agent(framework: str) -> Agent:
     fw_meta = FRAMEWORKS.get(framework, {})
 
     try:
-        from crewai_tools import TavilySearchResults
+        from crewai_tools import TavilySearchTool
         tavily_key = get_tavily_key()
-        tools = [TavilySearchResults(api_key=tavily_key, max_results=3)]
+        tools = [TavilySearchTool(api_key=tavily_key)]
     except Exception:
         tools = []
 
@@ -185,6 +185,13 @@ Return ONLY valid JSON:
 
 
 def _sanitize_json(text: str) -> str:
+    """Aggressively fix malformed JSON from LLM output."""
+    text = re.sub(r"```json\s*", "", text)
+    text = re.sub(r"```\s*", "", text)
+    text = re.sub(r"^[^{]*", "", text, flags=re.DOTALL)
+    last_brace = text.rfind("}")
+    if last_brace != -1:
+        text = text[:last_brace + 1]
     result = []
     in_string = False
     escape_next = False
@@ -199,12 +206,19 @@ def _sanitize_json(text: str) -> str:
             continue
         if ch == '"':
             in_string = not in_string
-        if in_string and ch in ('\n', '\r', '\t'):
-            result.append(repr(ch)[1:-1])
-        elif in_string and ord(ch) < 0x20:
-            result.append(f"\\u{ord(ch):04x}")
-        else:
-            result.append(ch)
+        if in_string:
+            if ch == '\n':
+                result.append('\\n')
+                continue
+            elif ch == '\r':
+                continue
+            elif ch == '\t':
+                result.append('\\t')
+                continue
+            elif ord(ch) < 0x20:
+                result.append(f"\\u{ord(ch):04x}")
+                continue
+        result.append(ch)
     cleaned = "".join(result)
     cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
     return cleaned
@@ -212,17 +226,30 @@ def _sanitize_json(text: str) -> str:
 
 def _parse_procedure(raw: str, framework: str, proc_type: str) -> Optional[GeneratedProcedure]:
     """Parse LLM output into GeneratedProcedure."""
+    sanitized = _sanitize_json(raw)
+
+    data = None
+    for attempt_str in [sanitized, raw]:
+        try:
+            json_match = re.search(r"\{[\s\S]*\}", attempt_str)
+            if json_match:
+                data = json.loads(json_match.group(0))
+                break
+        except Exception:
+            try:
+                from json_repair import repair_json
+                json_match = re.search(r"\{[\s\S]*\}", attempt_str)
+                if json_match:
+                    data = json.loads(repair_json(json_match.group(0)))
+                    break
+            except Exception:
+                continue
+
+    if not data:
+        logger.error(f"Procedure parse error: could not extract valid JSON")
+        return None
+
     try:
-        clean = re.sub(r"```json\s*", "", raw)
-        clean = re.sub(r"```\s*$", "", clean)
-        clean = re.sub(r"Thought:.*?(\{)", r"\1", clean, flags=re.DOTALL)
-
-        json_match = re.search(r"\{[\s\S]*\}", clean)
-        if not json_match:
-            return None
-
-        data = json.loads(_sanitize_json(json_match.group(0)))
-
         steps = [
             ProcedureStep(
                 step_number=s.get("step_number", i + 1),
@@ -253,7 +280,7 @@ def _parse_procedure(raw: str, framework: str, proc_type: str) -> Optional[Gener
             escalation_path=escalation_path,
         )
     except Exception as e:
-        logger.error(f"Procedure parse error: {e}")
+        logger.error(f"Procedure build error: {e}")
         return None
 
 

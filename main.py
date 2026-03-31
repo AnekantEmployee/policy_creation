@@ -356,4 +356,4 @@ async def generate_compliance_suite(
 if __name__ == "__main__":
     import uvicorn
     print("\n🚀 Compliance Intelligence Platform running at http://localhost:8000\n")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_level="warning")
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["backend"], log_level="warning")

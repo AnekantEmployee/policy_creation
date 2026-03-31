@@ -63,9 +63,9 @@ def _build_policy_agent(framework: str) -> Agent:
     fw_meta = FRAMEWORKS.get(framework, {})
 
     try:
-        from crewai_tools import TavilySearchResults
+        from crewai_tools import TavilySearchTool
         tavily_key = get_tavily_key()
-        tools = [TavilySearchResults(api_key=tavily_key, max_results=3)]
+        tools = [TavilySearchTool(api_key=tavily_key)]
     except Exception:
         tools = []
 
@@ -171,7 +171,17 @@ Return ONLY valid JSON:
 
 
 def _sanitize_json(text: str) -> str:
-    """Fix control characters and trailing commas that break json.loads."""
+    """Aggressively fix malformed JSON from LLM output."""
+    # Remove markdown fences
+    text = re.sub(r"```json\s*", "", text)
+    text = re.sub(r"```\s*", "", text)
+    # Remove LLM preamble before first {
+    text = re.sub(r"^[^{]*", "", text, flags=re.DOTALL)
+    # Remove anything after last }
+    last_brace = text.rfind("}")
+    if last_brace != -1:
+        text = text[:last_brace + 1]
+    # Fix unescaped newlines/tabs inside string values
     result = []
     in_string = False
     escape_next = False
@@ -186,12 +196,19 @@ def _sanitize_json(text: str) -> str:
             continue
         if ch == '"':
             in_string = not in_string
-        if in_string and ch in ('\n', '\r', '\t'):
-            result.append(repr(ch)[1:-1])
-        elif in_string and ord(ch) < 0x20:
-            result.append(f"\\u{ord(ch):04x}")
-        else:
-            result.append(ch)
+        if in_string:
+            if ch == '\n':
+                result.append('\\n')
+                continue
+            elif ch == '\r':
+                continue
+            elif ch == '\t':
+                result.append('\\t')
+                continue
+            elif ord(ch) < 0x20:
+                result.append(f"\\u{ord(ch):04x}")
+                continue
+        result.append(ch)
     cleaned = "".join(result)
     # Strip trailing commas before ] or }
     cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
@@ -200,17 +217,31 @@ def _sanitize_json(text: str) -> str:
 
 def _parse_policy(raw: str, framework: str, policy_type: str) -> Optional[GeneratedPolicy]:
     """Parse LLM output into GeneratedPolicy."""
+    sanitized = _sanitize_json(raw)
+
+    # Try direct parse first, then json_repair fallback
+    data = None
+    for attempt_str in [sanitized, raw]:
+        try:
+            json_match = re.search(r"\{[\s\S]*\}", attempt_str)
+            if json_match:
+                data = json.loads(json_match.group(0))
+                break
+        except Exception:
+            try:
+                from json_repair import repair_json
+                json_match = re.search(r"\{[\s\S]*\}", attempt_str)
+                if json_match:
+                    data = json.loads(repair_json(json_match.group(0)))
+                    break
+            except Exception:
+                continue
+
+    if not data:
+        logger.error(f"Policy parse error: could not extract valid JSON")
+        return None
+
     try:
-        clean = re.sub(r"```json\s*", "", raw)
-        clean = re.sub(r"```\s*$", "", clean)
-        clean = re.sub(r"Thought:.*?(\{)", r"\1", clean, flags=re.DOTALL)
-
-        json_match = re.search(r"\{[\s\S]*\}", clean)
-        if not json_match:
-            return None
-
-        data = json.loads(_sanitize_json(json_match.group(0)))
-
         sections = [
             PolicySection(
                 title=s.get("title", ""),
@@ -219,7 +250,6 @@ def _parse_policy(raw: str, framework: str, policy_type: str) -> Optional[Genera
             )
             for s in data.get("sections", [])
         ]
-
         return GeneratedPolicy(
             policy_id=data.get("policy_id", f"POL-{framework}-{policy_type.upper()[:4]}-001"),
             framework=framework,
@@ -234,7 +264,7 @@ def _parse_policy(raw: str, framework: str, policy_type: str) -> Optional[Genera
             classification=data.get("classification", "Internal"),
         )
     except Exception as e:
-        logger.error(f"Policy parse error: {e}")
+        logger.error(f"Policy build error: {e}")
         return None
 
 
