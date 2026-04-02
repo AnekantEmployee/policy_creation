@@ -348,39 +348,96 @@ def generate_docx(payload: dict, out_path: str) -> str | None:
         from docx.enum.text import WD_ALIGN_PARAGRAPH
         from datetime import datetime as dt
 
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+
         doc = Document()
-        for section in doc.sections:
-            section.top_margin = Inches(1)
-            section.bottom_margin = Inches(1)
-            section.left_margin = Inches(1.2)
-            section.right_margin = Inches(1.2)
+        for sec in doc.sections:
+            sec.top_margin = Inches(1)
+            sec.bottom_margin = Inches(1)
+            sec.left_margin = Inches(1.2)
+            sec.right_margin = Inches(1.2)
+            sec.different_first_page_header_footer = False
+
+            # ── Header: document title centered ──────────────────────────────
+            header_p = sec.header.paragraphs[0]
+            header_p.clear()
+            header_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = header_p.add_run("Compliance Documentation — " + payload.get("org_name", "Your Organization"))
+            run.font.size = Pt(8); run.italic = True; run.font.name = "Verdana"
+            r, g, b = 0x71, 0x80, 0x96
+            run.font.color.rgb = RGBColor(r, g, b)
+
+            # ── Footer: "<Org> Confidential   Page X of Y" ───────────────────
+            footer_p = sec.footer.paragraphs[0]
+            footer_p.clear()
+            footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            # Org name + Confidential
+            r1 = footer_p.add_run(payload.get("org_name", "Your Organization") + " Confidential     ")
+            r1.font.size = Pt(8); r1.italic = True; r1.font.name = "Verdana"
+            r1.font.color.rgb = RGBColor(0x71, 0x80, 0x96)
+
+            # "Page " literal
+            r2 = footer_p.add_run("Page ")
+            r2.font.size = Pt(8); r2.font.name = "Verdana"
+            r2.font.color.rgb = RGBColor(0x71, 0x80, 0x96)
+
+            # PAGE field
+            fld_page = OxmlElement("w:fldChar")
+            fld_page.set(qn("w:fldCharType"), "begin")
+            footer_p.runs[-1]._r.append(fld_page)
+            instr = OxmlElement("w:instrText")
+            instr.text = "PAGE"
+            footer_p.runs[-1]._r.append(instr)
+            fld_end = OxmlElement("w:fldChar")
+            fld_end.set(qn("w:fldCharType"), "end")
+            footer_p.runs[-1]._r.append(fld_end)
+
+            # " of " literal
+            r3 = footer_p.add_run(" of ")
+            r3.font.size = Pt(8); r3.font.name = "Verdana"
+            r3.font.color.rgb = RGBColor(0x71, 0x80, 0x96)
+
+            # NUMPAGES field
+            fld_num = OxmlElement("w:fldChar")
+            fld_num.set(qn("w:fldCharType"), "begin")
+            footer_p.runs[-1]._r.append(fld_num)
+            instr2 = OxmlElement("w:instrText")
+            instr2.text = "NUMPAGES"
+            footer_p.runs[-1]._r.append(instr2)
+            fld_end2 = OxmlElement("w:fldChar")
+            fld_end2.set(qn("w:fldCharType"), "end")
+            footer_p.runs[-1]._r.append(fld_end2)
 
         def sc(run, hex_c):
             r, g, b = int(hex_c[0:2],16), int(hex_c[2:4],16), int(hex_c[4:6],16)
             run.font.color.rgb = RGBColor(r, g, b)
+            run.font.name = "Verdana"
+
+        def vf(run):
+            run.font.name = "Verdana"
 
         def h1(t):
             p = doc.add_heading(t, level=1)
-            p.runs[0].font.size = Pt(18); sc(p.runs[0], "1a1a2e")
+            p.runs[0].font.size = Pt(18); p.runs[0].font.name = "Verdana"; sc(p.runs[0], "1a1a2e")
             p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(6)
 
         def h2(t):
             p = doc.add_heading(t, level=2)
-            p.runs[0].font.size = Pt(14); sc(p.runs[0], "2d3a6e")
+            p.runs[0].font.size = Pt(14); p.runs[0].font.name = "Verdana"; sc(p.runs[0], "2d3a6e")
             p.paragraph_format.space_before = Pt(6)
             p.paragraph_format.space_after = Pt(4)
-            # Remove Word's built-in pageBreakBefore on heading styles
-            from docx.oxml.ns import qn as _qn
             pPr = p._p.get_or_add_pPr()
-            pbr = pPr.find(_qn("w:pageBreakBefore"))
+            pbr = pPr.find(qn("w:pageBreakBefore"))
             if pbr is not None:
                 pPr.remove(pbr)
             return p
 
         def h3(t):
             p = doc.add_paragraph()
-            run = p.add_run(t); run.bold = True; run.font.size = Pt(11); sc(run, "4a5fa8")
+            run = p.add_run(t); run.bold = True; run.font.size = Pt(11); run.font.name = "Verdana"; sc(run, "4a5fa8")
 
         def meta_table(rows: list[tuple[str, str]]):
             """Render a 2-column label/value table for policy/procedure metadata."""
@@ -395,9 +452,9 @@ def generate_docx(payload: dict, out_path: str) -> str | None:
                 cells[0].width = col_widths[0]
                 cells[1].width = col_widths[1]
                 r1 = cells[0].paragraphs[0].add_run(row[0])
-                r1.bold = True; r1.font.size = Pt(9); sc(r1, "2d3a6e")
+                r1.bold = True; r1.font.size = Pt(9); r1.font.name = "Verdana"; sc(r1, "2d3a6e")
                 r2 = cells[1].paragraphs[0].add_run(row[1])
-                r2.font.size = Pt(9); sc(r2, "333333")
+                r2.font.size = Pt(9); r2.font.name = "Verdana"; sc(r2, "333333")
                 for cell in cells:
                     cell.paragraphs[0].paragraph_format.space_before = Pt(3)
                     cell.paragraphs[0].paragraph_format.space_after = Pt(3)
@@ -417,11 +474,11 @@ def generate_docx(payload: dict, out_path: str) -> str | None:
             pattern = re.compile(r'(\*{2}.+?\*{2}|\*[^*]+?\*)')
             for part in pattern.split(text):
                 if part.startswith('**') and part.endswith('**'):
-                    run = paragraph.add_run(part[2:-2]); run.bold = True; run.font.size = Pt(10)
+                    run = paragraph.add_run(part[2:-2]); run.bold = True; run.font.size = Pt(10); run.font.name = "Verdana"
                 elif part.startswith('*') and part.endswith('*'):
-                    run = paragraph.add_run(part[1:-1]); run.italic = True; run.font.size = Pt(10)
+                    run = paragraph.add_run(part[1:-1]); run.italic = True; run.font.size = Pt(10); run.font.name = "Verdana"
                 elif part:
-                    run = paragraph.add_run(part); run.font.size = Pt(10)
+                    run = paragraph.add_run(part); run.font.size = Pt(10); run.font.name = "Verdana"
 
         def body(text):
             if not text: return
@@ -458,58 +515,141 @@ def generate_docx(payload: dict, out_path: str) -> str | None:
         for p in policies:   pol_by_fw[p.get("framework", framework)].append(p)
         for p in procedures: proc_by_fw[p.get("framework", framework)].append(p)
 
-        # Cover
-        doc.add_paragraph()
-        cp = doc.add_paragraph("Compliance Documentation")
-        cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        cp.runs[0].bold = True; cp.runs[0].font.size = Pt(28); sc(cp.runs[0], "1a1a2e")
-        p = doc.add_paragraph(org_name); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.runs[0].font.size = Pt(18); sc(p.runs[0], "4a5fa8")
-        p = doc.add_paragraph(f"Framework: {framework}"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.runs[0].italic = True; p.runs[0].font.size = Pt(12); sc(p.runs[0], "718096")
-        p = doc.add_paragraph(f"Generated: {dt.now().strftime('%d %B %Y')}"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.runs[0].font.size = Pt(10); sc(p.runs[0], "718096")
-        p = doc.add_paragraph("CONFIDENTIAL — INTERNAL USE ONLY"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.runs[0].bold = True; p.runs[0].font.size = Pt(9); sc(p.runs[0], "c0392b")
-
-        # ── TOC ──────────────────────────────────────────────────────────────
-        doc.add_page_break()
-        toc_heading = doc.add_paragraph("Table of Contents")
-        toc_heading.runs[0].bold = True
-        toc_heading.runs[0].font.size = Pt(18)
-        sc(toc_heading.runs[0], "1a1a2e")
-        toc_heading.paragraph_format.space_after = Pt(14)
-
-        from docx.oxml.ns import qn
-        from docx.oxml import OxmlElement
-
-        def add_toc_entry(title, level=0):
-            p = doc.add_paragraph()
-            p.paragraph_format.space_after = Pt(4 if level else 8)
-            p.paragraph_format.left_indent = Inches(0.3 * level)
-            run = p.add_run(title)
-            run.font.size = Pt(9 if level == 2 else 10 if level == 1 else 11)
-            run.bold = (level == 0)
-            sc(run, "1a1a2e" if level == 0 else "2d3a6e" if level == 1 else "4a5fa8")
-
         all_fw = list(dict.fromkeys(
             list(pol_by_fw.keys()) + list(proc_by_fw.keys())
         ))
 
-        if policies:
-            add_toc_entry("Part I — Compliance Policies")
-            for fw in all_fw:
-                if pol_by_fw[fw]:
-                    add_toc_entry(fw, level=1)
-                    for pol in pol_by_fw[fw]:
-                        add_toc_entry(pol.get("title", ""), level=2)
-        if procedures:
-            add_toc_entry("Part II — Operational Procedures")
-            for fw in all_fw:
-                if proc_by_fw[fw]:
-                    add_toc_entry(fw, level=1)
-                    for proc in proc_by_fw[fw]:
-                        add_toc_entry(proc.get("title", ""), level=2)
+        # Cover
+        doc.add_paragraph()
+        cp = doc.add_paragraph("Compliance Documentation")
+        cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cp.runs[0].bold = True; cp.runs[0].font.size = Pt(28); cp.runs[0].font.name = "Verdana"; sc(cp.runs[0], "1a1a2e")
+        p = doc.add_paragraph(org_name); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.runs[0].font.size = Pt(18); p.runs[0].font.name = "Verdana"; sc(p.runs[0], "4a5fa8")
+        p = doc.add_paragraph(f"Framework: {framework}"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.runs[0].italic = True; p.runs[0].font.size = Pt(12); p.runs[0].font.name = "Verdana"; sc(p.runs[0], "718096")
+        p = doc.add_paragraph(f"Generated: {dt.now().strftime('%d %B %Y')}"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.runs[0].font.size = Pt(10); p.runs[0].font.name = "Verdana"; sc(p.runs[0], "718096")
+        p = doc.add_paragraph("CONFIDENTIAL — INTERNAL USE ONLY"); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.runs[0].bold = True; p.runs[0].font.size = Pt(9); p.runs[0].font.name = "Verdana"; sc(p.runs[0], "c0392b")
+
+        # ── Revision History ─────────────────────────────────────────────────
+        if policies or procedures:
+            doc.add_page_break()
+            rh_title = doc.add_paragraph()
+            rh_title.paragraph_format.space_after = Pt(14)
+            rhr = rh_title.add_run("Revision History")
+            rhr.bold = True; rhr.font.size = Pt(18); rhr.font.name = "Verdana"
+            sc(rhr, "1a1a2e")
+
+            # Columns: Document Title | Policy/Proc ID | Framework | Version | Effective Date | Review Date | Owner | Classification
+            headers = ["Document Title", "ID", "Framework", "Version", "Effective Date", "Review Date", "Owner", "Classification"]
+            col_w   = [Inches(1.6), Inches(1.1), Inches(0.8), Inches(0.55), Inches(0.85), Inches(0.85), Inches(1.4), Inches(0.9)]
+
+            all_docs = [(p, "Policy") for p in policies] + [(p, "Procedure") for p in procedures]
+            tbl = doc.add_table(rows=1 + len(all_docs), cols=len(headers))
+            tbl.style = "Table Grid"
+
+            # Header row
+            hdr_cells = tbl.rows[0].cells
+            for i, (h_txt, w) in enumerate(zip(headers, col_w)):
+                hdr_cells[i].width = w
+                run = hdr_cells[i].paragraphs[0].add_run(h_txt)
+                run.bold = True; run.font.size = Pt(8); run.font.name = "Verdana"
+                sc(run, "ffffff")
+                hdr_cells[i].paragraphs[0].paragraph_format.space_before = Pt(3)
+                hdr_cells[i].paragraphs[0].paragraph_format.space_after  = Pt(3)
+                # Dark navy background
+                tc_pr = hdr_cells[i]._tc.get_or_add_tcPr()
+                shd = OxmlElement("w:shd")
+                shd.set(qn("w:val"),   "clear")
+                shd.set(qn("w:color"), "auto")
+                shd.set(qn("w:fill"),  "1a1a2e")
+                tc_pr.append(shd)
+
+            # Data rows
+            for row_i, (doc_obj, doc_type) in enumerate(all_docs):
+                cells = tbl.rows[row_i + 1].cells
+                id_key    = "policy_id"    if doc_type == "Policy" else "procedure_id"
+                owner_key = "owner"
+                values = [
+                    doc_obj.get("title", ""),
+                    doc_obj.get(id_key, ""),
+                    doc_obj.get("framework", ""),
+                    doc_obj.get("version", "1.0"),
+                    doc_obj.get("effective_date", ""),
+                    doc_obj.get("review_date", ""),
+                    doc_obj.get(owner_key, ""),
+                    doc_obj.get("classification", ""),
+                ]
+                fill = "f0f4ff" if row_i % 2 == 0 else "ffffff"
+                for i, (val, w) in enumerate(zip(values, col_w)):
+                    cells[i].width = w
+                    run = cells[i].paragraphs[0].add_run(str(val or ""))
+                    run.font.size = Pt(7.5); run.font.name = "Verdana"
+                    sc(run, "1a1a2e")
+                    cells[i].paragraphs[0].paragraph_format.space_before = Pt(2)
+                    cells[i].paragraphs[0].paragraph_format.space_after  = Pt(2)
+                    tc_pr = cells[i]._tc.get_or_add_tcPr()
+                    shd = OxmlElement("w:shd")
+                    shd.set(qn("w:val"),   "clear")
+                    shd.set(qn("w:color"), "auto")
+                    shd.set(qn("w:fill"),  fill)
+                    tc_pr.append(shd)
+
+        # ── TOC ──────────────────────────────────────────────────────────────
+        doc.add_page_break()
+        toc_title = doc.add_paragraph()
+        toc_title.paragraph_format.space_after = Pt(16)
+        tr = toc_title.add_run("Table of Contents")
+        tr.bold = True; tr.font.size = Pt(18); tr.font.name = "Verdana"
+        sc(tr, "1a1a2e")
+
+        # Style the built-in TOC paragraph styles (TOC 1/2/3) via document XML
+        def _set_toc_style(style_name, size, bold, color_hex, indent_twips):
+            try:
+                style = doc.styles[style_name]
+                style.font.name  = "Verdana"
+                style.font.size  = Pt(size)
+                style.font.bold  = bold
+                style.font.color.rgb = RGBColor(
+                    int(color_hex[0:2], 16),
+                    int(color_hex[2:4], 16),
+                    int(color_hex[4:6], 16),
+                )
+                style.paragraph_format.left_indent  = Inches(indent_twips / 1440)
+                style.paragraph_format.space_before = Pt(4 if indent_twips else 8)
+                style.paragraph_format.space_after  = Pt(2)
+            except Exception:
+                pass
+
+        _set_toc_style("toc 1", 11, True,  "1a1a2e", 0)
+        _set_toc_style("toc 2", 10, False, "2d3a6e", 360)
+        _set_toc_style("toc 3",  9, False, "4a5fa8", 720)
+
+        # Insert Word native TOC field — Word calculates real page numbers on open
+        toc_p = doc.add_paragraph()
+        r_begin = toc_p.add_run()
+        fc_begin = OxmlElement("w:fldChar")
+        fc_begin.set(qn("w:fldCharType"), "begin")
+        fc_begin.set(qn("w:dirty"),       "true")
+        r_begin._r.append(fc_begin)
+
+        r_instr = toc_p.add_run()
+        instr   = OxmlElement("w:instrText")
+        instr.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        instr.text = ' TOC \\o "1-3" \\h \\z \\u '
+        r_instr._r.append(instr)
+
+        r_sep = toc_p.add_run()
+        fc_sep = OxmlElement("w:fldChar")
+        fc_sep.set(qn("w:fldCharType"), "separate")
+        r_sep._r.append(fc_sep)
+
+        r_end = toc_p.add_run()
+        fc_end = OxmlElement("w:fldChar")
+        fc_end.set(qn("w:fldCharType"), "end")
+        r_end._r.append(fc_end)
 
         # ── Part I — Policies ────────────────────────────────────────────────
         if policies:
@@ -556,8 +696,8 @@ def generate_docx(payload: dict, out_path: str) -> str | None:
                         h3("Procedure Steps")
                         for step in proc["steps"]:
                             sp = doc.add_paragraph()
-                            r1 = sp.add_run(f"Step {step.get('step_number')}: "); r1.bold = True; r1.font.size = Pt(10); sc(r1, "4a5fa8")
-                            r2 = sp.add_run(step.get("title", "")); r2.bold = True; r2.font.size = Pt(10)
+                            r1 = sp.add_run(f"Step {step.get('step_number')}: "); r1.bold = True; r1.font.size = Pt(10); r1.font.name = "Verdana"; sc(r1, "4a5fa8")
+                            r2 = sp.add_run(step.get("title", "")); r2.bold = True; r2.font.size = Pt(10); r2.font.name = "Verdana"
                             tools = ", ".join(step.get("tools_required", []))
                             meta_table([
                                 ("Responsible", step.get("responsible_role")),
