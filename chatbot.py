@@ -605,51 +605,38 @@ def generate_docx(payload: dict, out_path: str) -> str | None:
         tr.bold = True; tr.font.size = Pt(18); tr.font.name = "Verdana"
         sc(tr, "1a1a2e")
 
-        # Style the built-in TOC paragraph styles (TOC 1/2/3) via document XML
-        def _set_toc_style(style_name, size, bold, color_hex, indent_twips):
+        # Style toc 1/2/3 built-in styles for visual hierarchy
+        for _sn, _sz, _bd, _col, _ind, _spb in [
+            ("toc 1", 11, True,  "1a1a2e", 0.0,  10),
+            ("toc 2", 10, False, "2d3a6e", 0.2,   4),
+            ("toc 3",  9, False, "4a5fa8", 0.45,  2),
+        ]:
             try:
-                style = doc.styles[style_name]
-                style.font.name  = "Verdana"
-                style.font.size  = Pt(size)
-                style.font.bold  = bold
-                style.font.color.rgb = RGBColor(
-                    int(color_hex[0:2], 16),
-                    int(color_hex[2:4], 16),
-                    int(color_hex[4:6], 16),
-                )
-                style.paragraph_format.left_indent  = Inches(indent_twips / 1440)
-                style.paragraph_format.space_before = Pt(4 if indent_twips else 8)
-                style.paragraph_format.space_after  = Pt(2)
+                _st = doc.styles[_sn]
+                _st.font.name = "Verdana"; _st.font.size = Pt(_sz); _st.font.bold = _bd
+                _st.font.color.rgb = RGBColor(int(_col[0:2],16), int(_col[2:4],16), int(_col[4:6],16))
+                _st.paragraph_format.left_indent  = Inches(_ind)
+                _st.paragraph_format.space_before = Pt(_spb)
+                _st.paragraph_format.space_after  = Pt(2)
             except Exception:
                 pass
 
-        _set_toc_style("toc 1", 11, True,  "1a1a2e", 0)
-        _set_toc_style("toc 2", 10, False, "2d3a6e", 360)
-        _set_toc_style("toc 3",  9, False, "4a5fa8", 720)
-
-        # Insert Word native TOC field — Word calculates real page numbers on open
+        # Word native TOC field — calculates real page numbers when opened in Word
         toc_p = doc.add_paragraph()
-        r_begin = toc_p.add_run()
-        fc_begin = OxmlElement("w:fldChar")
-        fc_begin.set(qn("w:fldCharType"), "begin")
-        fc_begin.set(qn("w:dirty"),       "true")
-        r_begin._r.append(fc_begin)
-
-        r_instr = toc_p.add_run()
-        instr   = OxmlElement("w:instrText")
-        instr.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-        instr.text = ' TOC \\o "1-3" \\h \\z \\u '
-        r_instr._r.append(instr)
-
-        r_sep = toc_p.add_run()
-        fc_sep = OxmlElement("w:fldChar")
-        fc_sep.set(qn("w:fldCharType"), "separate")
-        r_sep._r.append(fc_sep)
-
-        r_end = toc_p.add_run()
-        fc_end = OxmlElement("w:fldChar")
-        fc_end.set(qn("w:fldCharType"), "end")
-        r_end._r.append(fc_end)
+        rb = toc_p.add_run()
+        fc1 = OxmlElement("w:fldChar"); fc1.set(qn("w:fldCharType"), "begin"); fc1.set(qn("w:dirty"), "true")
+        rb._r.append(fc1)
+        ri = toc_p.add_run()
+        ins = OxmlElement("w:instrText")
+        ins.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+        ins.text = ' TOC \\o "1-3" \\h \\z \\u '
+        ri._r.append(ins)
+        rs = toc_p.add_run()
+        fc2 = OxmlElement("w:fldChar"); fc2.set(qn("w:fldCharType"), "separate")
+        rs._r.append(fc2)
+        re_run = toc_p.add_run()
+        fc3 = OxmlElement("w:fldChar"); fc3.set(qn("w:fldCharType"), "end")
+        re_run._r.append(fc3)
 
         # ── Part I — Policies ────────────────────────────────────────────────
         if policies:
