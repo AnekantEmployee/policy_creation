@@ -436,8 +436,14 @@ def generate_docx(payload: dict, out_path: str) -> str | None:
             return p
 
         def h3(t):
-            p = doc.add_paragraph()
-            run = p.add_run(t); run.bold = True; run.font.size = Pt(11); run.font.name = "Verdana"; sc(run, "4a5fa8")
+            p = doc.add_heading(t, level=3)
+            p.runs[0].bold = True; p.runs[0].font.size = Pt(10); p.runs[0].font.name = "Verdana"; sc(p.runs[0], "4a5fa8")
+            p.paragraph_format.space_before = Pt(6)
+            p.paragraph_format.space_after  = Pt(2)
+            pPr = p._p.get_or_add_pPr()
+            pbr = pPr.find(qn("w:pageBreakBefore"))
+            if pbr is not None:
+                pPr.remove(pbr)
 
         def meta_table(rows: list[tuple[str, str]]):
             """Render a 2-column label/value table for policy/procedure metadata."""
@@ -609,7 +615,8 @@ def generate_docx(payload: dict, out_path: str) -> str | None:
         for _sn, _sz, _bd, _col, _ind, _spb in [
             ("toc 1", 11, True,  "1a1a2e", 0.0,  10),
             ("toc 2", 10, False, "2d3a6e", 0.2,   4),
-            ("toc 3",  9, False, "4a5fa8", 0.45,  2),
+            ("toc 3",  9, False, "4a5fa8", 0.4,   2),
+            ("toc 4",  8, False, "718096", 0.6,   1),
         ]:
             try:
                 _st = doc.styles[_sn]
@@ -629,7 +636,7 @@ def generate_docx(payload: dict, out_path: str) -> str | None:
         ri = toc_p.add_run()
         ins = OxmlElement("w:instrText")
         ins.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-        ins.text = ' TOC \\o "1-3" \\h \\z \\u '
+        ins.text = ' TOC \\o "1-4" \\h \\z \\u '
         ri._r.append(ins)
         rs = toc_p.add_run()
         fc2 = OxmlElement("w:fldChar"); fc2.set(qn("w:fldCharType"), "separate")
@@ -699,6 +706,23 @@ def generate_docx(payload: dict, out_path: str) -> str | None:
         return str(e)
 
 
+def _single_docx_bytes(item: dict, item_type: str, org_name: str = "") -> bytes | None:
+    """Generate a single-item DOCX and return bytes, or None on failure."""
+    payload = {
+        "org_name":   org_name or "Organization",
+        "framework":  item.get("framework", ""),
+        "policies":   [item] if item_type == "policy"   else [],
+        "procedures": [item] if item_type == "procedure" else [],
+    }
+    tmp = os.path.join(os.environ.get("TEMP", "/tmp"), f"_single_{item.get('policy_id', item.get('procedure_id','doc'))}.docx")
+    err = generate_docx(payload, tmp)
+    if not err and os.path.exists(tmp):
+        data = open(tmp, "rb").read()
+        os.unlink(tmp)
+        return data
+    return None
+
+
 def render_policy(p, dl_key):
     h = html
     meta_items = "".join([
@@ -722,8 +746,17 @@ def render_policy(p, dl_key):
         st.markdown(sec.get("content", ""))
         if refs_html:
             st.markdown(f'<div style="margin-top:0.3rem;margin-bottom:0.6rem">{refs_html}</div>', unsafe_allow_html=True)
-    st.download_button("⬇ Download JSON", data=json.dumps(p, indent=2),
-        file_name=f"{p.get('policy_id','policy')}.json", mime="application/json", key=dl_key)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button("⬇ Download JSON", data=json.dumps(p, indent=2),
+            file_name=f"{p.get('policy_id','policy')}.json", mime="application/json", key=dl_key)
+    with c2:
+        docx_bytes = _single_docx_bytes(p, "policy", st.session_state.get("org_name", "") or st.session_state.get("org_description", ""))
+        if docx_bytes:
+            st.download_button("📄 Download .docx", data=docx_bytes,
+                file_name=f"{p.get('policy_id','policy')}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key=dl_key + "_docx")
 
 
 # ─── Sidebar ─────────────────────────────────────────────────────────────────
@@ -851,6 +884,12 @@ if st.session_state.page == "history":
                                     st.download_button("⬇ Download JSON", data=json.dumps(proc, indent=2),
                                         file_name=f"{proc.get('procedure_id','procedure')}.json",
                                         mime="application/json", key=f"dl_proc_{s['session_id']}_{pi}")
+                                    docx_bytes = _single_docx_bytes(proc, "procedure", detail.get("org_name", ""))
+                                    if docx_bytes:
+                                        st.download_button("📄 Download .docx", data=docx_bytes,
+                                            file_name=f"{proc.get('procedure_id','procedure')}.docx",
+                                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                            key=f"dl_proc_docx_{s['session_id']}_{pi}")
     st.stop()
 
 # ─── CHAT PAGE ────────────────────────────────────────────────────────────────
@@ -1325,6 +1364,18 @@ elif phase == "done":
                       {f'<div style="margin-top:0.4rem">{tools_html}</div>' if tools_html else ''}
                     </div>""", unsafe_allow_html=True)
                     st.markdown(step.get("description", ""))
+                dc1, dc2 = st.columns(2)
+                with dc1:
+                    st.download_button("⬇ Download JSON", data=json.dumps(proc, indent=2),
+                        file_name=f"{proc.get('procedure_id','procedure')}.json",
+                        mime="application/json", key=f"dl_proc_done_{pi}")
+                with dc2:
+                    docx_bytes = _single_docx_bytes(proc, "procedure", st.session_state.get("org_name", "") or st.session_state.get("org_description", ""))
+                    if docx_bytes:
+                        st.download_button("📄 Download .docx", data=docx_bytes,
+                            file_name=f"{proc.get('procedure_id','procedure')}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            key=f"dl_proc_done_docx_{pi}")
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("---")
