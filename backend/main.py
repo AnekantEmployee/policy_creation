@@ -787,9 +787,29 @@ async def get_org_history(
             return {"sessions": []}
 
         org_ids = [o.id for o in orgs]
+        from db.models import Policy, Procedure
+        from sqlalchemy import func
+
+        policy_counts = (
+            db.query(Policy.session_id, func.count(Policy.id).label("policy_count"))
+            .group_by(Policy.session_id)
+            .subquery()
+        )
+        procedure_counts = (
+            db.query(Procedure.session_id, func.count(Procedure.id).label("procedure_count"))
+            .group_by(Procedure.session_id)
+            .subquery()
+        )
+
         sessions = (
             db.query(Session)
+            .outerjoin(policy_counts,    Session.id == policy_counts.c.session_id)
+            .outerjoin(procedure_counts, Session.id == procedure_counts.c.session_id)
             .filter(Session.org_id.in_(org_ids))
+            .filter(
+                (func.coalesce(policy_counts.c.policy_count, 0) +
+                 func.coalesce(procedure_counts.c.procedure_count, 0)) > 0
+            )
             .order_by(desc(Session.created_at))
             .limit(limit)
             .all()

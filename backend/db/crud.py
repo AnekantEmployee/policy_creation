@@ -150,13 +150,41 @@ def get_procedures_for_session(db: DBSession, session_id: int) -> List[Procedure
 # ─── History (for frontend) ───────────────────────────────────────────────────
 
 def get_full_history(db: DBSession, limit: int = 50) -> List[dict]:
-    """Return sessions with org info + counts for the history view."""
+    """Return sessions with org info + counts for the history view.
+    
+    Only returns sessions that have at least one generated policy or procedure.
+    Sessions created during a wizard run that was interrupted before generation
+    are excluded — they would otherwise appear as empty scans.
+    """
+    from db.models import Policy, Procedure
+    from sqlalchemy import func
+
+    # Subqueries: count policies and procedures per session
+    policy_counts = (
+        db.query(Policy.session_id, func.count(Policy.id).label("policy_count"))
+        .group_by(Policy.session_id)
+        .subquery()
+    )
+    procedure_counts = (
+        db.query(Procedure.session_id, func.count(Procedure.id).label("procedure_count"))
+        .group_by(Procedure.session_id)
+        .subquery()
+    )
+
     sessions = (
         db.query(Session)
+        .outerjoin(policy_counts,    Session.id == policy_counts.c.session_id)
+        .outerjoin(procedure_counts, Session.id == procedure_counts.c.session_id)
+        .filter(
+            # Keep only sessions that have at least one doc
+            (func.coalesce(policy_counts.c.policy_count, 0) +
+             func.coalesce(procedure_counts.c.procedure_count, 0)) > 0
+        )
         .order_by(desc(Session.created_at))
         .limit(limit)
         .all()
     )
+
     result = []
     for s in sessions:
         result.append({
