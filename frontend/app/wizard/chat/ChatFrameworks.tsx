@@ -1,11 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useWizardStore } from '@/store/wizardStore';
+import { frameworksApi } from '@/api/frameworks';
 import { BotBubble, UserBubble, ChatGroup } from './ChatBubble';
 import { ChatNavigation } from './ChatNavigation';
 import { historyApi } from '@/api/history';
+import type { Framework } from '@/types';
 
 interface Props { active: boolean; done: boolean; }
 
@@ -18,7 +20,29 @@ function scoreColor(score: number) {
 export const ChatFrameworks: React.FC<Props> = ({ active, done }) => {
   const router = useRouter();
   const { profile, selectedFrameworks, toggleFramework, sessionId, setPhase, reset } = useWizardStore();
-  const frameworks = profile?.recommended_frameworks ?? [];
+  const aiFrameworks = profile?.recommended_frameworks ?? [];
+  const aiFrameworkIds = new Set(aiFrameworks.map((f) => f.id));
+
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [allFrameworks, setAllFrameworks] = useState<Framework[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+
+  const extraFrameworks = allFrameworks.filter((f) => !aiFrameworkIds.has(f.id));
+
+  const handleToggleCatalog = async () => {
+    if (!showCatalog && allFrameworks.length === 0) {
+      setCatalogLoading(true);
+      try {
+        const data = await frameworksApi.list();
+        setAllFrameworks(data);
+      } catch {
+        // non-fatal
+      } finally {
+        setCatalogLoading(false);
+      }
+    }
+    setShowCatalog((v) => !v);
+  };
 
   const handleConfirm = async () => {
     if (sessionId) {
@@ -64,13 +88,16 @@ export const ChatFrameworks: React.FC<Props> = ({ active, done }) => {
           <p><span className="font-semibold text-green-700">✅ Analysis complete!</span> Detected <span className="font-semibold">{orgType}</span>.</p>
           {summary && <p className="text-neutral-600 text-xs italic">{summary}</p>}
           {industries && <p className="text-xs text-neutral-500">🏭 Industries: {industries}</p>}
-          <p className="mt-1">Select the compliance frameworks that apply. Pre-selected based on AI recommendations.</p>
+          <p className="mt-1">Select the compliance frameworks that apply. AI recommendations are shown first — you can also browse the full catalog below.</p>
         </div>
       </BotBubble>
 
       <div className="ml-11 space-y-3">
+
+        {/* AI Suggested */}
+        <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">🤖 AI Recommended</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {frameworks.map(fw => {
+          {aiFrameworks.map(fw => {
             const selected = selectedFrameworks.includes(fw.id);
             const pct = Math.round(fw.relevance_score * 100);
             return (
@@ -96,7 +123,57 @@ export const ChatFrameworks: React.FC<Props> = ({ active, done }) => {
           })}
         </div>
 
-        <div className="space-y-2">
+        {/* Browse More toggle */}
+        <div className="border-t border-neutral-200 pt-2">
+          <button
+            onClick={handleToggleCatalog}
+            className="flex items-center gap-2 text-sm font-semibold text-primary-600 hover:text-primary-800 transition-colors"
+          >
+            <span className={`transition-transform duration-200 inline-block ${showCatalog ? 'rotate-90' : ''}`}>▶</span>
+            {showCatalog ? 'Hide full catalog' : '+ Add more frameworks'}
+          </button>
+        </div>
+
+        {/* Full Catalog */}
+        {showCatalog && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">📚 All Frameworks</p>
+            {catalogLoading ? (
+              <div className="flex items-center gap-2 text-sm text-neutral-500 py-2">
+                <svg className="animate-spin h-4 w-4 text-primary-500" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                </svg>
+                Loading…
+              </div>
+            ) : extraFrameworks.length === 0 ? (
+              <p className="text-xs text-neutral-500">All available frameworks are already listed above.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {extraFrameworks.map(fw => {
+                  const selected = selectedFrameworks.includes(fw.id);
+                  return (
+                    <button key={fw.id} onClick={() => toggleFramework(fw.id)}
+                      className={`text-left p-3 rounded-xl border-2 transition-all duration-200 ${selected ? 'border-secondary-500 bg-secondary-50' : 'border-neutral-200 bg-white hover:border-neutral-300'}`}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{fw.icon}</span>
+                          <span className="text-sm font-bold text-neutral-900">{fw.id}</span>
+                        </div>
+                        {selected && <span className="text-xs px-1.5 py-0.5 bg-secondary-100 text-secondary-700 rounded-full">✓ Added</span>}
+                      </div>
+                      <p className="text-xs text-neutral-400 mb-1">{fw.region}</p>
+                      <p className="text-xs text-neutral-500 line-clamp-2">{fw.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Confirm */}
+        <div className="space-y-2 pt-1">
           <button
             disabled={selectedFrameworks.length === 0}
             onClick={handleConfirm}
