@@ -1,0 +1,30 @@
+# ─── FastAPI Server ───────────────────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+requests
+
+# ─── Authentication & Security ────────────────────────────────────────────────
+PyJWT>=2.8.0
+bcrypt>=4.0.0
+pydantic[email]>=2.0.0
+python-multipart>=0.0.6
+
+# ─── Data / Persistence ───────────────────────────────────────────────────────
+SQLAlchemy>=2.0.0
+pydantic>=2.0.0
+python-dotenv
+
+# ─── LLM Integration & AI Agents ───────────────────────────────────────────────
+crewai
+crewai-tools
+crewai[litellm]
+openai>=2.20.0
+groq
+
+# ─── Document export ──────────────────────────────────────────────────────────
+python-docx
+
+# ─── Utilities ────────────────────────────────────────────────────────────────
+rich
+json-repair
+tavily-python

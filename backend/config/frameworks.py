@@ -257,5 +257,12 @@ def get_framework(framework_id: str) -> Dict[str, Any]:
 
 
 def get_all_frameworks() -> List[Dict[str, Any]]:
-    """Get all frameworks as list with IDs included."""
-    return [{"id": k, **v} for k, v in FRAMEWORKS.items()]
+    """Get all frameworks as list with IDs included and confidence scores."""
+    frameworks = []
+    for k, v in FRAMEWORKS.items():
+        framework_data = {"id": k, **v}
+        # Add a default confidence score
+        if "confidence" not in framework_data:
+            framework_data["confidence"] = 85
+        frameworks.append(framework_data)
+    return frameworks

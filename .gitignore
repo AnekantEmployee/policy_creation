@@ -17,6 +17,18 @@ env/
 
 # Database
 *.sqlite3
+*.db
+
+# ngrok
+ngrok*/
+
+# Scratch / notes
+kiro1.md
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
 
 # IDE
 .vscode/

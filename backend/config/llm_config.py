@@ -1,109 +1,154 @@
 """
-LLM Configuration with API Key + Model Rotation
-Supports: Groq (key × model rotation)
+LLM Configuration with API Key & Model Rotation
 """
 
 import os
 import logging
-import itertools
-import time
-from typing import Optional, List, Tuple
+from typing import Optional, List, Dict, Any
+from pathlib import Path
 from dotenv import load_dotenv
-from crewai import LLM
+import random
 
-load_dotenv()
+# Load .env from backend folder
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
 logger = logging.getLogger(__name__)
 
 os.environ["LITELLM_LOG"] = "ERROR"
 logging.getLogger("LiteLLM").setLevel(logging.ERROR)
-logging.getLogger("httpx").setLevel(logging.ERROR)
 
-GROQ_MODELS = [
-    "groq/llama-3.3-70b-versatile",
-    "groq/llama-3.1-8b-instant",
-    "groq/qwen/qwen3-32b",
-]
+# ─── LLM Configuration ────────────────────────────────────────────────────────
 
-GROQ_API_KEYS: List[str] = [
-    v for k, v in sorted(os.environ.items())
-    if k.startswith("GROQ_API_KEY") and v
-]
+# Collect all available Groq API keys
+_groq_keys = []
+_primary_key = os.getenv("GROQ_API_KEY", "")
+if _primary_key:
+    _groq_keys.append(_primary_key)
+for i in range(1, 10):  # Check for GROQ_API_KEY_1 through GROQ_API_KEY_9
+    key = os.getenv(f"GROQ_API_KEY_{i}", "")
+    if key and key not in _groq_keys:
+        _groq_keys.append(key)
 
+GROQ_API_KEYS = _groq_keys if _groq_keys else []
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
+GROQ_MODELS = [
+    "groq/llama-3.3-70b-versatile",    # primary — best quality for document generation
+    "groq/llama-3.1-70b-versatile",    # fallback 70b variant
+    "groq/llama-3.3-70b-versatile",    # repeat to weight 70b higher
+    "groq/llama-3.1-8b-instant",       # last resort — fast but produces less content
+]
 
-class RotationState:
-    def __init__(self):
-        self._slots: List[Tuple[str, str]] = [
-            (key, model)
-            for key in GROQ_API_KEYS
-            for model in GROQ_MODELS
-        ]
-        self._cycle = itertools.cycle(self._slots) if self._slots else iter([])
-        logger.info(f"RotationState: {len(GROQ_API_KEYS)} Groq keys × {len(GROQ_MODELS)} models = {len(self._slots)} slots")
+# Track rotation state
+_api_key_index = 0
+_model_index = 0
 
-    def next_slot(self) -> Optional[Tuple[str, str]]:
-        if not self._slots:
-            return None
-        return next(self._cycle)
+def get_next_api_key() -> Optional[str]:
+    """Get next API key in rotation"""
+    global _api_key_index
+    if not GROQ_API_KEYS:
+        return OPENAI_API_KEY
+    _api_key_index = (_api_key_index + 1) % len(GROQ_API_KEYS)
+    return GROQ_API_KEYS[_api_key_index]
 
-    @property
-    def total_slots(self) -> int:
-        return len(self._slots)
+def get_current_api_key() -> Optional[str]:
+    """Get current API key without rotating"""
+    if not GROQ_API_KEYS:
+        return OPENAI_API_KEY
+    return GROQ_API_KEYS[_api_key_index]
 
-    def info(self) -> dict:
-        return {
-            "groq_keys": len(GROQ_API_KEYS),
-            "groq_models": GROQ_MODELS,
-            "groq_total_slots": self.total_slots,
-            "tavily_available": bool(TAVILY_API_KEY),
-        }
+def get_next_model() -> str:
+    """Get next model in rotation"""
+    global _model_index
+    _model_index = (_model_index + 1) % len(GROQ_MODELS)
+    return GROQ_MODELS[_model_index]
 
+def get_current_model() -> str:
+    """Get current model without rotating"""
+    return GROQ_MODELS[_model_index]
 
-_rotation = RotationState()
+def get_random_api_key() -> Optional[str]:
+    """Get random API key"""
+    if not GROQ_API_KEYS:
+        return OPENAI_API_KEY
+    return random.choice(GROQ_API_KEYS)
 
+def get_random_model() -> str:
+    """Get random model"""
+    return random.choice(GROQ_MODELS)
 
-_RATE_LIMIT_SIGNALS = ["429", "rate_limit", "rate_limit_exceeded", "tokens", "503", "token"]
+def get_llm_config() -> Dict[str, Any]:
+    """Get current LLM configuration"""
+    return {
+        "provider": "groq" if GROQ_API_KEYS else "openai",
+        "api_keys_count": len(GROQ_API_KEYS),
+        "models": GROQ_MODELS,
+        "current_model": get_current_model(),
+        "current_api_key_index": _api_key_index,
+    }
 
+def get_rotation_info() -> Dict[str, Any]:
+    """Get LLM rotation info for status endpoint"""
+    unique_models = list(dict.fromkeys(GROQ_MODELS))   # deduplicated
+    return {
+        "groq_keys_available": len(GROQ_API_KEYS),
+        "groq_models": unique_models,
+        "groq_total_slots": len(GROQ_API_KEYS) * len(unique_models),
+        "current_model": get_current_model(),
+        "current_api_key_index": _api_key_index,
+        "tavily_available": bool(TAVILY_API_KEY),
+    }
 
-def get_llm(temperature: float = 0.3) -> LLM:
-    slot = _rotation.next_slot()
-    if not slot:
-        raise RuntimeError("No Groq API keys configured")
-    key, model = slot
-    os.environ["GROQ_API_KEY"] = key
-    logger.debug(f"Using Groq: {model}")
-    return LLM(model=model, temperature=temperature, api_key=key)
+def get_llm_with_fallback(temperature: float = 0.7):
+    """Get LLM instance with fallback - uses current (non-rotating) API key"""
+    from crewai import LLM
+    
+    api_key = get_current_api_key()
+    model = get_current_model()
+    
+    if GROQ_API_KEYS:
+        logger.debug(f"Initializing Groq LLM with model: {model}")
+        return LLM(model=model, api_key=api_key, temperature=temperature,
+                   max_tokens=8192)
+    elif OPENAI_API_KEY:
+        logger.debug("Initializing OpenAI LLM")
+        return LLM(model="gpt-4", api_key=api_key, temperature=temperature,
+                   max_tokens=8192)
+    else:
+        logger.warning("No LLM API keys configured, using default LLM")
+        return LLM(model=model, temperature=temperature, max_tokens=8192)
 
+def get_fresh_llm(temperature: float = 0.7, rotate: bool = True):
+    """Get fresh LLM instance with API key and model rotation
+    
+    Args:
+        temperature: Temperature for LLM
+        rotate: If True, rotates both API key and model. If False, uses random selection.
+    """
+    from crewai import LLM
+    
+    if rotate:
+        api_key = get_next_api_key()
+        model = get_next_model()
+        logger.info(f"Rotating to: API key index {_api_key_index}, Model: {model}")
+    else:
+        api_key = get_random_api_key()
+        model = get_random_model()
+        logger.info(f"Random selection: Model: {model}")
+    
+    if GROQ_API_KEYS:
+        logger.debug(f"Initializing fresh Groq LLM with model: {model}")
+        return LLM(model=model, api_key=api_key, temperature=temperature,
+                   max_tokens=8192)
+    elif OPENAI_API_KEY:
+        logger.debug("Initializing fresh OpenAI LLM")
+        return LLM(model="gpt-4", api_key=api_key, temperature=temperature,
+                   max_tokens=8192)
+    else:
+        logger.warning("No LLM API keys configured, using default LLM")
+        return LLM(model=model, temperature=temperature, max_tokens=8192)
 
-def get_llm_with_fallback(temperature: float = 0.3, max_attempts: int = 10) -> LLM:
-    """Rotate through all key×model slots on rate-limit/token errors."""
-    errors = []
-    attempts = min(max_attempts, max(_rotation.total_slots, 1))
-    for _ in range(attempts):
-        try:
-            return get_llm(temperature=temperature)
-        except Exception as e:
-            err = str(e)
-            if any(sig in err.lower() for sig in _RATE_LIMIT_SIGNALS):
-                errors.append(err[:120])
-                time.sleep(2)
-                continue
-            raise
-    raise RuntimeError(f"All Groq slots exhausted. Last errors: {errors[-3:]}")
-
-
-def get_fresh_llm(temperature: float = 0.3) -> LLM:
-    """Always rotate to the next slot — use this on each retry."""
-    return get_llm(temperature=temperature)
-
-
-def get_rotation_info() -> dict:
-    return _rotation.info()
-
-
-def get_tavily_key() -> str:
-    if not TAVILY_API_KEY:
-        raise ValueError("TAVILY_API_KEY not set in environment")
-    return TAVILY_API_KEY
+def get_tavily_key() -> Optional[str]:
+    """Get Tavily API key"""
+    return TAVILY_API_KEY if TAVILY_API_KEY else None

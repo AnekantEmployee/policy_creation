@@ -14,9 +14,9 @@ from typing import List, Optional, Dict, Any
 
 from crewai import Agent, Task, Crew, Process
 
-from backend.config.llm_config import get_llm_with_fallback, get_tavily_key
-from backend.config.frameworks import FRAMEWORKS, get_all_frameworks
-from backend.models.schemas import FrameworkMatch, OrgProfileResponse
+from config.llm_config import get_fresh_llm, get_tavily_key
+from config.frameworks import FRAMEWORKS, get_all_frameworks
+from models.schemas import FrameworkMatch, OrgProfileResponse
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ def _build_org_profiling_agent() -> Agent:
         tools=tools,
         verbose=False,
         allow_delegation=False,
-        llm=get_llm_with_fallback(temperature=0.2),
+        llm=get_fresh_llm(temperature=0.2, rotate=True),
     )
 
 
@@ -174,6 +174,7 @@ def profile_organization(
                 tasks=[task],
                 process=Process.sequential,
                 verbose=False,
+                tracing=False,
             )
 
             result = crew.kickoff()

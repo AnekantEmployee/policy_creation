@@ -13,10 +13,57 @@ import json
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean,
-    Text, DateTime, ForeignKey, JSON,
+    Text, DateTime, ForeignKey, JSON, Enum,
 )
 from sqlalchemy.orm import relationship
-from backend.db.database import Base
+from db.database import Base
+import enum
+
+
+class UserRole(str, enum.Enum):
+    """User roles for the compliance platform"""
+    ADMIN = "admin"                      # Full system access
+    COMPLIANCE_OFFICER = "compliance_officer"  # Can create/manage policies and procedures
+    SECURITY_LEAD = "security_lead"      # Can view and approve policies
+    EXECUTIVE = "executive"               # Read-only access to reports and dashboards
+    AUDITOR = "auditor"                  # Read-only access to history and generated docs
+
+
+class User(Base):
+    """User accounts for authentication"""
+    __tablename__ = "users"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    email           = Column(String(256), unique=True, nullable=False, index=True)
+    username        = Column(String(128), unique=True, nullable=False, index=True)
+    password_hash   = Column(String(256), nullable=False)
+    full_name       = Column(String(256), nullable=True)
+    role            = Column(Enum(UserRole), default=UserRole.COMPLIANCE_OFFICER, nullable=False)
+    is_active       = Column(Boolean, default=True)
+    is_verified     = Column(Boolean, default=False)
+    is_approved     = Column(Boolean, default=False)   # must be approved by admin before login
+    created_at      = Column(DateTime, default=datetime.utcnow)
+    updated_at      = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login      = Column(DateTime, nullable=True)
+
+    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+
+
+class UserSession(Base):
+    """Track user login sessions"""
+    __tablename__ = "user_sessions"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    user_id         = Column(Integer, ForeignKey("users.id"), nullable=False)
+    access_token    = Column(String(512), nullable=False, unique=True, index=True)
+    refresh_token   = Column(String(512), nullable=True, unique=True, index=True)
+    expires_at      = Column(DateTime, nullable=False)
+    created_at      = Column(DateTime, default=datetime.utcnow)
+    ip_address      = Column(String(45), nullable=True)
+    user_agent      = Column(String(512), nullable=True)
+    is_active       = Column(Boolean, default=True)
+
+    user = relationship("User", back_populates="sessions")
 
 
 class Organization(Base):

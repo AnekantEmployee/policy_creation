@@ -6,7 +6,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy import desc
 
-from backend.db.models import Organization, Session, Policy, Procedure
+from db.models import Organization, Session, Policy, Procedure
 
 
 # ─── Organization ─────────────────────────────────────────────────────────────

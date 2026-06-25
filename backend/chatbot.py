@@ -9,8 +9,7 @@ import os
 import re
 import requests
 import streamlit as st
-from backend.config.llm_config import get_llm_with_fallback
-import streamlit.components.v1 as components
+from config.llm_config import get_llm_with_fallback
 
 API_BASE = "http://localhost:8000"
 
@@ -331,12 +330,11 @@ def render_chat():
         else:
             msgs_html += f'<div class="chat-label-user">You</div><div class="chat-user">{html.escape(msg["content"])}</div>'
     st.markdown(f'<div class="chat-container" id="chat-box">{msgs_html}</div>', unsafe_allow_html=True)
-    components.html(
+    st.html(
         '<script>'
         'function s(){var e=window.parent.document.querySelectorAll(".chat-container");'
         'if(e.length){e[e.length-1].scrollTop=e[e.length-1].scrollHeight;}else{setTimeout(s,150);}}'
-        'setTimeout(s,100);</script>',
-        height=1,
+        'setTimeout(s,100);</script>'
     )
 
 
