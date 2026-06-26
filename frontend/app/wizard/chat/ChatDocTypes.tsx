@@ -83,14 +83,14 @@ export const ChatDocTypes: React.FC<Props> = ({ active, done }) => {
   return (
     <ChatGroup>
       <BotBubble>
-        <p>Which document types do you want to generate, and for which frameworks?</p>
+        <p>Now let's pick which documents to generate and for which frameworks.</p>
       </BotBubble>
 
       <div className="ml-11 space-y-4 bg-white rounded-2xl border border-neutral-200 shadow-sm p-5">
 
         {/* Framework selection for generation */}
         <div>
-          <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">Generate for Frameworks</p>
+          <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">📋 Generate for which frameworks?</p>
           <div className="flex flex-wrap gap-2">
             {selectedFrameworks.map(fw => (
               <button key={fw} onClick={() => toggleFw(fw)}
@@ -103,7 +103,7 @@ export const ChatDocTypes: React.FC<Props> = ({ active, done }) => {
 
         {/* Policy types */}
         <div>
-          <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">Policy Types <span className="normal-case font-normal text-neutral-400">({pols.length} selected)</span></p>
+          <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">📋 Policies <span className="normal-case font-normal text-neutral-400">({pols.length} selected)</span></p>
           <div className="grid grid-cols-2 gap-1.5">
             {Object.entries(POLICY_TYPES).map(([k, label]) => (
               <button key={k} onClick={() => togglePol(k)}
@@ -116,7 +116,7 @@ export const ChatDocTypes: React.FC<Props> = ({ active, done }) => {
 
         {/* Procedure types */}
         <div>
-          <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">Procedure Types <span className="normal-case font-normal text-neutral-400">({procs.length} selected)</span></p>
+          <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">⚙️ Procedures <span className="normal-case font-normal text-neutral-400">({procs.length} selected)</span></p>
           <div className="grid grid-cols-2 gap-1.5">
             {Object.entries(PROCEDURE_TYPES).map(([k, label]) => (
               <button key={k} onClick={() => toggleProc(k)}

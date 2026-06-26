@@ -69,7 +69,7 @@ export const ChatOrgInfo: React.FC<Props> = ({ active, done }) => {
       <BotBubble>
         <div className="space-y-1">
           <p className="font-semibold text-base">👋 Welcome to ComplianceIQ</p>
-          <p>I'll guide you through creating deeply personalized compliance policies and procedures. Let's start with your organization.</p>
+          <p>Let's create tailored compliance policies and procedures for your organization. First, tell me about your company.</p>
         </div>
       </BotBubble>
 
@@ -89,7 +89,7 @@ export const ChatOrgInfo: React.FC<Props> = ({ active, done }) => {
 
           {/* Description */}
           <div>
-            <label className="block text-xs font-semibold text-neutral-600 mb-1.5 uppercase tracking-wide">Description * <span className="normal-case font-normal text-neutral-400">(industry, region, type)</span></label>
+            <label className="block text-xs font-semibold text-neutral-600 mb-1.5 uppercase tracking-wide">About Your Organization *</label>
             <input
               value={form.description}
               onChange={(e) => { setForm(p => ({ ...p, description: e.target.value })); setErrors(p => ({ ...p, description: '' })); }}
@@ -97,6 +97,7 @@ export const ChatOrgInfo: React.FC<Props> = ({ active, done }) => {
               className={`w-full px-3 py-2 text-sm rounded-lg border-2 bg-neutral-50 focus:bg-white focus:outline-none transition-colors ${errors.description ? 'border-red-400' : 'border-neutral-200 focus:border-primary-500'}`}
             />
             {errors.description && <p className="text-xs text-red-500 mt-1">{errors.description}</p>}
+            <p className="text-xs text-neutral-400 mt-1">Include industry, size, and focus area</p>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {EXAMPLES.map(ex => (
                 <button key={ex} type="button" onClick={() => setForm(p => ({ ...p, description: ex }))}
@@ -132,7 +133,7 @@ export const ChatOrgInfo: React.FC<Props> = ({ active, done }) => {
 
           <button type="submit"
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-primary-600 to-secondary-500 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity shadow-sm">
-            Analyze My Organization <ArrowRight className="h-4 w-4" />
+            Start Analysis <ArrowRight className="h-4 w-4" />
           </button>
 
           {/* Exit Button */}

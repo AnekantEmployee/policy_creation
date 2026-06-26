@@ -85,10 +85,10 @@ export const ChatFrameworks: React.FC<Props> = ({ active, done }) => {
     <ChatGroup>
       <BotBubble>
         <div className="space-y-2">
-          <p><span className="font-semibold text-green-700">✅ Analysis complete!</span> Detected <span className="font-semibold">{orgType}</span>.</p>
+          <p><span className="font-semibold text-green-700">✅ Analysis complete!</span> Organization type: <span className="font-semibold">{orgType}</span>.</p>
           {summary && <p className="text-neutral-600 text-xs italic">{summary}</p>}
           {industries && <p className="text-xs text-neutral-500">🏭 Industries: {industries}</p>}
-          <p className="mt-1">Select the compliance frameworks that apply. AI recommendations are shown first — you can also browse the full catalog below.</p>
+          <p className="mt-1">Choose the compliance frameworks your organization needs. Our recommendations are based on your industry and location.</p>
         </div>
       </BotBubble>
 

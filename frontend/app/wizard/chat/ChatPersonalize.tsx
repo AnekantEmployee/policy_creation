@@ -45,10 +45,34 @@ interface QuestionBlockProps {
   onSkip: () => void;
   onBack: () => void;
   canGoBack: boolean;
+  suggestions?: string[];
+}
+
+// Smart suggestion generator based on question category and key
+function generateSuggestions(q: PersonalizationQuestion): string[] {
+  const suggestionMap: Record<string, string[]> = {
+    // Contacts
+    ciso_contact: ['Jane Smith, ciso@acme.com', 'Security Lead, security@company.com'],
+    dpo_contact: ['John Doe, dpo@company.com', 'Data Officer, privacy@company.com'],
+    incident_email: ['security@company.com', 'incidents@company.com', 'security-team@company.com'],
+    legal_contact: ['General Counsel, gc@company.com', 'compliance@company.com', 'External Counsel'],
+    // Tools
+    siem_tool: ['Splunk', 'Microsoft Sentinel', 'Datadog', 'IBM QRadar'],
+    ticketing_tool: ['JIRA', 'ServiceNow', 'Freshdesk', 'Linear', 'GitHub Issues'],
+    iam_tool: ['Okta', 'Azure AD', 'Google Workspace', 'Ping Identity'],
+    backup_tool: ['Veeam', 'AWS Backup', 'Acronis', 'Commvault'],
+    // Processes
+    data_classification: ['Public, Internal, Confidential, Restricted', 'None, Confidential, Secret'],
+    retention_period: ['3 years customer data, 7 years financial', '1 year general, 3 years sensitive'],
+    incident_response_sla: ['72 hours', '60 days', '24 hours', '30 days'],
+    employee_count: ['50', '200–500', '1000–5000', '10000+'],
+  };
+  return suggestionMap[q.key] ?? [];
 }
 
 const QuestionBlock: React.FC<QuestionBlockProps> = ({ q, index, total, onSave, onSkip, onBack, canGoBack }) => {
   const [value, setValue] = useState('');
+  const suggestions = generateSuggestions(q);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +80,10 @@ const QuestionBlock: React.FC<QuestionBlockProps> = ({ q, index, total, onSave, 
     else onSkip();
     // Clear input after submission
     setValue('');
+  };
+
+  const applySuggestion = (suggestion: string) => {
+    setValue(suggestion);
   };
 
   return (
@@ -89,6 +117,23 @@ const QuestionBlock: React.FC<QuestionBlockProps> = ({ q, index, total, onSave, 
           )}
 
           <p className="text-xs text-neutral-400">💡 {q.hint}</p>
+
+          {/* Suggestions Chips (for text/email/textarea) */}
+          {suggestions.length > 0 && (q.type === 'text' || q.type === 'email' || q.type === 'textarea') && (
+            <div className="flex flex-wrap gap-2">
+              <span className="text-xs text-neutral-400 self-center">Suggestions:</span>
+              {suggestions.map((sugg, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => applySuggestion(sugg)}
+                  className="px-2.5 py-1 text-xs bg-primary-50 text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-100 transition-colors font-medium truncate"
+                >
+                  {sugg}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex gap-2">
             {canGoBack && (

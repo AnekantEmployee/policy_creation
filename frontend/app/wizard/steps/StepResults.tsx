@@ -351,10 +351,10 @@ export const StepResults: React.FC = () => {
       {/* Hero */}
       <div className="text-center space-y-2">
         <div className="text-4xl">🎉</div>
-        <h2 className="text-2xl font-bold text-neutral-900">Documents Generated!</h2>
+        <h2 className="text-2xl font-bold text-neutral-900">Your Documents Are Ready!</h2>
         <p className="text-neutral-500">
-          {policies.length} policies · {procedures.length} procedures · {selectedGenFrameworks.join(', ')}
-          {answeredCount > 0 && ` · ${answeredCount} personalizations applied`}
+          {policies.length} compliance policies · {procedures.length} procedures · {selectedGenFrameworks.join(', ')}
+          {answeredCount > 0 && ` · Personalized with ${answeredCount} details`}
         </p>
       </div>
 
@@ -376,10 +376,10 @@ export const StepResults: React.FC = () => {
       <div className="flex gap-3">
         <Button variant="primary" fullWidth size="lg" icon={<Download className="h-5 w-5" />}
           onClick={downloadAll} disabled={downloading}>
-          {downloading ? 'Generating DOCX…' : 'Download All Documents (.docx)'}
+          {downloading ? 'Generating DOCX…' : 'Download Complete Package (.docx)'}
         </Button>
         <Button variant="outline" size="lg" icon={<RefreshCw className="h-5 w-5" />}
-          onClick={() => setShowRegenerate(true)} title="Regenerate without re-entering org info">
+          onClick={() => setShowRegenerate(true)} title="Regenerate with different options">
           Regenerate
         </Button>
       </div>
@@ -513,7 +513,7 @@ export const StepResults: React.FC = () => {
       {/* Start new run */}
       <div className="text-center pt-4">
         <Button variant="outline" icon={<RefreshCw className="h-4 w-4" />} onClick={reset}>
-          Start New Compliance Run
+          Start Another Compliance Run
         </Button>
       </div>
 
