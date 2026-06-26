@@ -30,38 +30,53 @@ export default function HistoryPage(_props: PageProps<'/history'>) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [downloading, setDownloading]   = useState<number | null>(null);
   const [expandedOrgs, setExpandedOrgs] = useState<Set<string>>(new Set());
+  const [hydrated, setHydrated] = useState(false);
   const alphabetRef = useRef<HTMLDivElement>(null);
   const orgSectionsRef = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Hydrate auth and redirect if not authenticated
+  // Hydrate auth from storage on mount
   useEffect(() => {
     initializeFromStorage();
+    setHydrated(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Redirect to auth if not authenticated (after hydration is complete)
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (hydrated && !isAuthenticated) {
       router.push('/auth');
     }
-  }, [isAuthenticated, router]);
+  }, [hydrated, isAuthenticated, router]);
 
   const canWrite = user?.role ? WRITE_ROLES.includes(user.role) : false;
 
   // ── Load sessions list ──────────────────────────────────────────────────
   const load = async () => {
-    if (!isAuthenticated) return;
     setLoading(true);
     try {
       const data = await historyApi.list(100);
       setSessions(data);
-    } catch {
+    } catch (e: any) {
+      console.error('Failed to load history:', e);
+      // If auth failed (401), clear auth and redirect
+      if (e?.response?.status === 401) {
+        console.log('Auth token invalid, clearing and redirecting');
+        useAuthStore.getState().clearAuth();
+        router.push('/auth');
+        return;
+      }
       toast.error('Failed to load history');
+      setSessions([]);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, [isAuthenticated]); // reload once auth is ready
+  useEffect(() => { 
+    if (hydrated && isAuthenticated) {
+      load();
+    }
+  }, [hydrated, isAuthenticated]);
 
   // ── Expand / collapse a session row ────────────────────────────────────
   const handleExpand = async (id: number) => {
@@ -122,14 +137,15 @@ export default function HistoryPage(_props: PageProps<'/history'>) {
   const totalPolicies   = sessions.reduce((a, s) => a + s.policy_count,    0);
   const totalProcedures = sessions.reduce((a, s) => a + s.procedure_count, 0);
 
-  // Group sessions by organization and then by date
+  // Group sessions by organization (case-insensitive) and then by date
   const groupedByOrg = sessions.reduce((acc, session) => {
-    if (!acc[session.org_name]) {
-      acc[session.org_name] = [];
+    const orgKey = session.org_name.toLowerCase();
+    if (!acc[orgKey]) {
+      acc[orgKey] = { displayName: session.org_name, sessions: [] };
     }
-    acc[session.org_name].push(session);
+    acc[orgKey].sessions.push(session);
     return acc;
-  }, {} as Record<string, HistorySession[]>);
+  }, {} as Record<string, { displayName: string; sessions: HistorySession[] }>);
 
   // Sort organizations alphabetically
   const sortedOrgs = Object.keys(groupedByOrg).sort();
@@ -145,12 +161,12 @@ export default function HistoryPage(_props: PageProps<'/history'>) {
     }
   };
 
-  const toggleOrgExpanded = (orgName: string) => {
+  const toggleOrgExpanded = (orgKey: string) => {
     const newExpanded = new Set(expandedOrgs);
-    if (newExpanded.has(orgName)) {
-      newExpanded.delete(orgName);
+    if (newExpanded.has(orgKey)) {
+      newExpanded.delete(orgKey);
     } else {
-      newExpanded.add(orgName);
+      newExpanded.add(orgKey);
     }
     setExpandedOrgs(newExpanded);
   };
@@ -230,28 +246,30 @@ export default function HistoryPage(_props: PageProps<'/history'>) {
           /* ── Organized by Organization ── */
           ) : (
             <div className="space-y-6">
-              {sortedOrgs.map((orgName) => {
-                const orgSessions = groupedByOrg[orgName];
+              {sortedOrgs.map((orgKey) => {
+                const orgData = groupedByOrg[orgKey];
+                const orgSessions = orgData.sessions;
+                const orgName = orgData.displayName;
                 // Sort sessions by date (newest first)
                 const sortedSessions = [...orgSessions].sort((a, b) => 
                   new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                 );
-                const isExpanded = expandedOrgs.has(orgName);
+                const isExpanded = expandedOrgs.has(orgKey);
                 const totalOrgPolicies = orgSessions.reduce((a, s) => a + s.policy_count, 0);
                 const totalOrgProcedures = orgSessions.reduce((a, s) => a + s.procedure_count, 0);
 
                 return (
                   <div
-                    key={orgName}
+                    key={orgKey}
                     ref={(el) => {
-                      if (el) orgSectionsRef.current[orgName] = el;
+                      if (el) orgSectionsRef.current[orgKey] = el;
                     }}
                     className="scroll-mt-24"
                   >
                     {/* Organization Header */}
                     <div
                       className="flex items-center justify-between p-4 cursor-pointer hover:bg-neutral-100 rounded-lg transition-colors mb-3"
-                      onClick={() => toggleOrgExpanded(orgName)}
+                      onClick={() => toggleOrgExpanded(orgKey)}
                     >
                       <div className="flex items-center gap-3">
                         {isExpanded
@@ -377,67 +395,92 @@ export default function HistoryPage(_props: PageProps<'/history'>) {
                                       ))}
                                     </div>
 
-                                    {/* Download button */}
+                                    {/* Policies and Procedures - grouped by framework */}
                                     {(detail.policies.length > 0 || detail.procedures.length > 0) && (
-                                      <Button
-                                        variant="primary"
-                                        size="sm"
-                                        icon={<Download className="h-4 w-4" />}
-                                        disabled={downloading === s.session_id}
-                                        onClick={() => handleDownloadDocx(s)}
-                                      >
-                                        {downloading === s.session_id
-                                          ? 'Generating…'
-                                          : 'Download Compliance Package (.docx)'}
-                                      </Button>
-                                    )}
-
-                                    {/* Policies list */}
-                                    {detail.policies.length > 0 && (
-                                      <div>
-                                        <p className="text-xs font-semibold text-neutral-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                                          <FileText className="h-3.5 w-3.5" />
-                                          Policies ({detail.policies.length})
-                                        </p>
-                                        <div className="space-y-1">
-                                          {detail.policies.map((p) => (
-                                            <div
-                                              key={p.policy_id}
-                                              className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg text-sm"
-                                            >
-                                              <span className="font-medium text-neutral-900 truncate">{p.title}</span>
-                                              <div className="flex items-center gap-2 ml-2 shrink-0">
-                                                <Badge variant="primary" size="sm">{p.framework}</Badge>
-                                                <Badge variant="info"    size="sm">v{p.version}</Badge>
-                                              </div>
+                                      <>
+                                        {/* Policies by framework */}
+                                        {detail.policies.length > 0 && (
+                                          <div>
+                                            <p className="text-xs font-semibold text-neutral-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                                              <FileText className="h-3.5 w-3.5" />
+                                              Policies by Framework
+                                            </p>
+                                            <div className="space-y-3">
+                                              {(() => {
+                                                const frameworkGroups = detail.policies.reduce((acc, p) => {
+                                                  if (!acc[p.framework]) acc[p.framework] = [];
+                                                  acc[p.framework].push(p);
+                                                  return acc;
+                                                }, {} as Record<string, typeof detail.policies>);
+                                                return Object.keys(frameworkGroups).sort().map((fw) => (
+                                                  <div key={fw}>
+                                                    <div className="flex items-center gap-2 mb-1.5">
+                                                      <Badge variant="primary" size="sm">{fw}</Badge>
+                                                      <span className="text-xs text-neutral-400">({frameworkGroups[fw].length})</span>
+                                                    </div>
+                                                    <div className="space-y-1 ml-2">
+                                                      {frameworkGroups[fw].map((p) => (
+                                                        <div key={p.policy_id} className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg text-sm">
+                                                          <span className="font-medium text-neutral-900 truncate">{p.title}</span>
+                                                          <Badge variant="info" size="sm">v{p.version}</Badge>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                ));
+                                              })()}
                                             </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
+                                          </div>
+                                        )}
 
-                                    {/* Procedures list */}
-                                    {detail.procedures.length > 0 && (
-                                      <div>
-                                        <p className="text-xs font-semibold text-neutral-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                                          <Zap className="h-3.5 w-3.5" />
-                                          Procedures ({detail.procedures.length})
-                                        </p>
-                                        <div className="space-y-1">
-                                          {detail.procedures.map((p) => (
-                                            <div
-                                              key={p.procedure_id}
-                                              className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg text-sm"
-                                            >
-                                              <span className="font-medium text-neutral-900 truncate">{p.title}</span>
-                                              <div className="flex items-center gap-2 ml-2 shrink-0">
-                                                <Badge variant="secondary" size="sm">{p.framework}</Badge>
-                                                <span className="text-xs text-neutral-400">{p.frequency}</span>
-                                              </div>
+                                        {/* Procedures by framework */}
+                                        {detail.procedures.length > 0 && (
+                                          <div>
+                                            <p className="text-xs font-semibold text-neutral-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                                              <Zap className="h-3.5 w-3.5" />
+                                              Procedures by Framework
+                                            </p>
+                                            <div className="space-y-3">
+                                              {(() => {
+                                                const frameworkGroups = detail.procedures.reduce((acc, p) => {
+                                                  if (!acc[p.framework]) acc[p.framework] = [];
+                                                  acc[p.framework].push(p);
+                                                  return acc;
+                                                }, {} as Record<string, typeof detail.procedures>);
+                                                return Object.keys(frameworkGroups).sort().map((fw) => (
+                                                  <div key={fw}>
+                                                    <div className="flex items-center gap-2 mb-1.5">
+                                                      <Badge variant="secondary" size="sm">{fw}</Badge>
+                                                      <span className="text-xs text-neutral-400">({frameworkGroups[fw].length})</span>
+                                                    </div>
+                                                    <div className="space-y-1 ml-2">
+                                                      {frameworkGroups[fw].map((p) => (
+                                                        <div key={p.procedure_id} className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg text-sm">
+                                                          <span className="font-medium text-neutral-900 truncate">{p.title}</span>
+                                                          <span className="text-xs text-neutral-400">{p.frequency}</span>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                ));
+                                              })()}
                                             </div>
-                                          ))}
-                                        </div>
-                                      </div>
+                                          </div>
+                                        )}
+
+                                        {/* Download button */}
+                                        <Button
+                                          variant="primary"
+                                          size="sm"
+                                          icon={<Download className="h-4 w-4" />}
+                                          disabled={downloading === s.session_id}
+                                          onClick={() => handleDownloadDocx(s)}
+                                        >
+                                          {downloading === s.session_id
+                                            ? 'Generating…'
+                                            : 'Download Compliance Package (.docx)'}
+                                        </Button>
+                                      </>
                                     )}
 
                                     {/* No docs yet */}

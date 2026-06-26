@@ -161,10 +161,19 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'auth-store',
       version: 1,
-      migrate: (persistedState, version) => {
-        // Return the persisted state as-is for any older version;
-        // add field-by-field migrations here if the state shape changes.
-        return persistedState as AuthState;
+      migrate: (persistedState: any, version: number) => {
+        // Handle migration from any older version
+        if (version < 1 || !persistedState) {
+          return {
+            user: null,
+            isAuthenticated: false,
+          };
+        }
+        // Ensure required fields exist, default missing ones
+        return {
+          user: persistedState.user ?? null,
+          isAuthenticated: persistedState.isAuthenticated ?? false,
+        };
       },
       // Only persist the user object and isAuthenticated flag across page reloads.
       // Tokens are read back from localStorage inside initializeFromStorage().

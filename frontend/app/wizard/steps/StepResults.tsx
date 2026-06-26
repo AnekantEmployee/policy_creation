@@ -33,7 +33,14 @@ const PolicyCard: React.FC<{ policy: GeneratedPolicy }> = ({ policy }) => {
             </div>
           </div>
         </div>
-        {open ? <ChevronDown className="h-4 w-4 text-neutral-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0" />}
+        <div className="flex items-center gap-2 shrink-0 ml-3">
+          <button onClick={(e) => { e.stopPropagation(); downloadWizardDocx(policy.title, [policy.framework], [policy], []); }}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg font-medium transition-colors"
+            title="Download policy">
+            <Download className="h-3.5 w-3.5" /> Download
+          </button>
+          {open ? <ChevronDown className="h-4 w-4 text-neutral-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0" />}
+        </div>
       </button>
       {open && (
         <div className="border-t border-neutral-200 p-4 space-y-4 animate-fade-in">
@@ -59,12 +66,6 @@ const PolicyCard: React.FC<{ policy: GeneratedPolicy }> = ({ policy }) => {
               )}
             </div>
           ))}
-          <div className="pt-2">
-            <button onClick={() => downloadWizardDocx(policy.title, [policy.framework], [policy], [])}
-              className="flex items-center gap-2 text-xs text-primary-600 hover:text-primary-700 font-medium">
-              <Download className="h-3.5 w-3.5" /> Download (.docx)
-            </button>
-          </div>
         </div>
       )}
     </div>
@@ -91,7 +92,14 @@ const ProcedureCard: React.FC<{ proc: GeneratedProcedure }> = ({ proc }) => {
             </div>
           </div>
         </div>
-        {open ? <ChevronDown className="h-4 w-4 text-neutral-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0" />}
+        <div className="flex items-center gap-2 shrink-0 ml-3">
+          <button onClick={(e) => { e.stopPropagation(); downloadWizardDocx(proc.title, [proc.framework], [], [proc]); }}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-secondary-600 hover:text-secondary-700 hover:bg-secondary-50 rounded-lg font-medium transition-colors"
+            title="Download procedure">
+            <Download className="h-3.5 w-3.5" /> Download
+          </button>
+          {open ? <ChevronDown className="h-4 w-4 text-neutral-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0" />}
+        </div>
       </button>
       {open && (
         <div className="border-t border-neutral-200 p-4 space-y-4 animate-fade-in">
@@ -119,10 +127,6 @@ const ProcedureCard: React.FC<{ proc: GeneratedProcedure }> = ({ proc }) => {
               </div>
             ))}
           </div>
-          <button onClick={() => downloadWizardDocx(proc.title, [proc.framework], [], [proc])}
-            className="flex items-center gap-2 text-xs text-secondary-600 hover:text-secondary-700 font-medium">
-            <Download className="h-3.5 w-3.5" /> Download (.docx)
-          </button>
         </div>
       )}
     </div>
@@ -285,9 +289,22 @@ const RegenerateModal: React.FC<{
 // ── Main results page ─────────────────────────────────────────────────────────
 export const StepResults: React.FC = () => {
   const { policies, procedures, orgName, selectedGenFrameworks, answers, questions, sessionId, setResults, reset } = useWizardStore();
-  const [tab, setTab] = useState<'policies' | 'procedures'>('policies');
+  const [tab, setTab] = useState<string>('');
+  const [subTab, setSubTab] = useState<'policies' | 'procedures'>('policies');
   const [downloading, setDownloading] = useState(false);
   const [showRegenerate, setShowRegenerate] = useState(false);
+
+  // Initialize tab to first framework
+  useEffect(() => {
+    if (!tab && (policies.length > 0 || procedures.length > 0)) {
+      const frameworks = new Set([
+        ...policies.map(p => p.framework),
+        ...procedures.map(p => p.framework)
+      ]);
+      const firstFw = Array.from(frameworks).sort()[0];
+      setTab(firstFw || 'policies');
+    }
+  }, [policies.length, procedures.length]);
 
   const downloadAll = async () => {
     setDownloading(true);
@@ -387,33 +404,111 @@ export const StepResults: React.FC = () => {
         </Card>
       )}
 
-      {/* Tabs */}
-      <div className="flex border-b border-neutral-200 gap-4">
-        {(['policies', 'procedures'] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`pb-2 text-sm font-medium capitalize transition-colors border-b-2 ${tab === t ? 'text-primary-600 border-primary-600' : 'text-neutral-500 border-transparent hover:text-neutral-700'}`}>
-            {t === 'policies' ? `📋 Policies (${policies.length})` : `📑 Procedures (${procedures.length})`}
-          </button>
-        ))}
-      </div>
+      {/* Framework Tabs (horizontal) */}
+      {(policies.length > 0 || procedures.length > 0) && (() => {
+        const allFrameworks = new Set([
+          ...policies.map(p => p.framework),
+          ...procedures.map(p => p.framework)
+        ]);
+        const frameworks = Array.from(allFrameworks).sort();
 
-      {/* Content */}
-      <div className="space-y-3 animate-fade-in">
-        {tab === 'policies'
-          ? policies.map((p, i) => <PolicyCard key={`${p.framework}-${p.policy_type}-${i}`} policy={p} />)
-          : procedures.map((p, i) => <ProcedureCard key={`${p.framework}-${p.procedure_type}-${i}`} proc={p} />)
-        }
-        {tab === 'policies' && policies.length === 0 && <p className="text-center text-neutral-400 py-8">No policies generated.</p>}
-        {tab === 'procedures' && procedures.length === 0 && (
-          <div className="text-center py-8 space-y-3">
-            <p className="text-neutral-400">No procedures generated yet.</p>
-            <Button variant="outline" size="sm" icon={<RefreshCw className="h-4 w-4" />}
-              onClick={() => setShowRegenerate(true)}>
-              Generate Procedures Now
-            </Button>
+        return (
+          <div className="space-y-4">
+            {/* Framework tabs - horizontal */}
+            <div className="flex border-b border-neutral-200 gap-2 overflow-x-auto">
+              {frameworks.map((fw) => (
+                <button
+                  key={fw}
+                  onClick={() => {
+                    setTab(fw);
+                    setSubTab('policies'); // Reset subtab when switching frameworks
+                  }}
+                  className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
+                    tab === fw
+                      ? 'text-primary-600 border-primary-600'
+                      : 'text-neutral-500 border-transparent hover:text-neutral-700'
+                  }`}
+                >
+                  {fw}
+                </button>
+              ))}
+            </div>
+
+            {/* Subtabs for selected framework (Policies/Procedures) */}
+            {(() => {
+              const fwPolicies = policies.filter(p => p.framework === tab);
+              const fwProcedures = procedures.filter(p => p.framework === tab);
+
+              return (
+                <div className="space-y-4">
+                  {/* Subtabs */}
+                  <div className="flex gap-4 border-b border-neutral-200">
+                    {fwPolicies.length > 0 && (
+                      <button
+                        onClick={() => setSubTab('policies')}
+                        className={`pb-2 text-sm font-medium capitalize transition-colors border-b-2 ${
+                          subTab === 'policies'
+                            ? 'text-primary-600 border-primary-600'
+                            : 'text-neutral-500 border-transparent hover:text-neutral-700'
+                        }`}
+                      >
+                        📋 Policies ({fwPolicies.length})
+                      </button>
+                    )}
+                    {fwProcedures.length > 0 && (
+                      <button
+                        onClick={() => setSubTab('procedures')}
+                        className={`pb-2 text-sm font-medium capitalize transition-colors border-b-2 ${
+                          subTab === 'procedures'
+                            ? 'text-secondary-600 border-secondary-600'
+                            : 'text-neutral-500 border-transparent hover:text-neutral-700'
+                        }`}
+                      >
+                        📑 Procedures ({fwProcedures.length})
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Content */}
+                  <div className="space-y-3 animate-fade-in">
+                    {subTab === 'policies' && fwPolicies.length > 0 && (
+                      <div className="space-y-3">
+                        {fwPolicies.map((p, i) => (
+                          <PolicyCard key={`${tab}-pol-${p.policy_type}-${i}`} policy={p} />
+                        ))}
+                      </div>
+                    )}
+                    {subTab === 'policies' && fwPolicies.length === 0 && (
+                      <p className="text-center text-neutral-400 py-8">No policies for {tab}.</p>
+                    )}
+                    {subTab === 'procedures' && fwProcedures.length > 0 && (
+                      <div className="space-y-3">
+                        {fwProcedures.map((p, i) => (
+                          <ProcedureCard key={`${tab}-proc-${p.procedure_type}-${i}`} proc={p} />
+                        ))}
+                      </div>
+                    )}
+                    {subTab === 'procedures' && fwProcedures.length === 0 && (
+                      <div className="text-center py-8 space-y-3">
+                        <p className="text-neutral-400">No procedures for {tab} yet.</p>
+                        <Button variant="outline" size="sm" icon={<RefreshCw className="h-4 w-4" />}
+                          onClick={() => setShowRegenerate(true)}>
+                          Generate Procedures Now
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
-        )}
-      </div>
+        );
+      })()}
+
+      {/* Empty state */}
+      {policies.length === 0 && procedures.length === 0 && (
+        <p className="text-center text-neutral-400 py-8">No documents generated yet.</p>
+      )}
 
       {/* Start new run */}
       <div className="text-center pt-4">

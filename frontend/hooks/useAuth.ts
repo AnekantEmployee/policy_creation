@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 
@@ -11,19 +11,25 @@ export function useAuth() {
   const { isAuthenticated, user, accessToken, refreshAccessToken, initializeFromStorage, clearAuth } =
     useAuthStore();
 
-  // Initialize auth from storage on mount
+  // Track whether we've done the first hydration
+  const hydratedRef = useRef(false);
+
+  // Initialize auth from storage on mount (once)
   useEffect(() => {
-    initializeFromStorage();
+    if (!hydratedRef.current) {
+      hydratedRef.current = true;
+      initializeFromStorage();
+    }
   }, [initializeFromStorage]);
 
   // Set up token refresh interval (refresh 5 minutes before expiry)
+  // Only runs after hydration — avoids false redirect on first load
   useEffect(() => {
     if (!isAuthenticated || !accessToken) return;
 
     const refreshInterval = setInterval(async () => {
       const refreshed = await refreshAccessToken();
       if (!refreshed) {
-        // If refresh failed, redirect to auth
         router.push('/auth');
       }
     }, 25 * 60 * 1000); // 25 minutes

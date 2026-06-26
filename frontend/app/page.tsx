@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LandingPage } from './landing';
 import { useAuthStore } from '@/store/authStore';
@@ -8,22 +8,24 @@ import { useAuthStore } from '@/store/authStore';
 export default function Home(_props: PageProps<'/'>) {
   const router = useRouter();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const [hydrated, setHydrated] = useState(false);
 
-  // Initialize auth from storage on mount
+  // Initialize auth from storage on mount, then mark hydrated
   useEffect(() => {
     useAuthStore.getState().initializeFromStorage();
+    setHydrated(true);
   }, []);
 
-  // Redirect to auth if not authenticated
+  // Only redirect after storage has been read — avoids a false unauthenticated flash
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (hydrated && !isAuthenticated) {
       router.push('/auth');
     }
-  }, [isAuthenticated, router]);
+  }, [hydrated, isAuthenticated, router]);
 
-  // Show loading or landing page only if authenticated
-  if (!isAuthenticated) {
-    return <div className="min-h-screen bg-neutral-900 flex items-center justify-center" />;
+  // Show nothing until we know auth state
+  if (!hydrated || !isAuthenticated) {
+    return <div className="min-h-screen bg-neutral-900" />;
   }
 
   return <LandingPage />;

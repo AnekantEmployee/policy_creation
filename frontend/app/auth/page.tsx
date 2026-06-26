@@ -109,7 +109,9 @@ function PendingApproval({ email, onBack }: { email: string; onBack: () => void 
 function AuthPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get('redirect') || '/';
+  // Only allow redirect to known safe internal paths — never a stale or external value
+  const rawRedirect = searchParams.get('redirect') || '/';
+  const redirectTo = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/';
 
   const { login, signup, isAuthenticated, initializeFromStorage } = useAuthStore();
 
