@@ -36,6 +36,7 @@ from fastapi.responses import Response
 from contextlib import asynccontextmanager
 import asyncio
 from datetime import datetime, timedelta
+from typing import Optional, List
 from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy import desc
@@ -50,7 +51,7 @@ from config.dependencies import (
     require_read_access,
 )
 from config.auth import create_access_token, create_refresh_token, hash_password, decode_token, verify_password
-from models.schemas import SystemStatus
+from models.schemas import SystemStatus, PersonalizationChatRequest, PersonalizationChatResponse
 from models.auth_schemas import UserCreate, UserLogin, TokenResponse, PasswordChange, UserResponse
 from db.database import init_db, get_db, SessionLocal
 from db import crud, auth_crud
@@ -1273,6 +1274,414 @@ async def generate_personalization_questions(
         logger.warning(f"AI question generation failed, using static fallback: {e}")
 
     return {"questions": _static_questions(frameworks), "source": "static"}
+
+
+# ─── Conversational Personalization ───────────────────────────────────────────
+
+def _get_required_info_keys(frameworks: list, policy_types: list, procedure_types: list) -> dict:
+    """
+    Map frameworks and policy types to expected information keys.
+    Returns dict of key -> { description, prompt, priority }
+    """
+    all_keys = {
+        "ciso_contact": {
+            "description": "CISO or Security Officer contact",
+            "prompt": "Could you tell us about your CISO or Security Officer (name and email)?",
+            "priority": "high",
+            "categories": ["contacts"],
+        },
+        "dpo_contact": {
+            "description": "Data Protection Officer contact",
+            "prompt": "What's your DPO contact information?",
+            "priority": "high" if "GDPR" in frameworks else "medium",
+            "categories": ["contacts", "legal"],
+        },
+        "incident_email": {
+            "description": "Security incident reporting email",
+            "prompt": "What email or channel do you use for reporting security incidents?",
+            "priority": "high",
+            "categories": ["contacts"],
+        },
+        "siem_tool": {
+            "description": "SIEM/log monitoring tool",
+            "prompt": "What SIEM or log monitoring tool do you use?",
+            "priority": "high",
+            "categories": ["tools"],
+        },
+        "ticketing_tool": {
+            "description": "Incident ticketing system",
+            "prompt": "What ticketing system do you use for incidents?",
+            "priority": "medium",
+            "categories": ["tools"],
+        },
+        "iam_tool": {
+            "description": "Identity & Access Management tool",
+            "prompt": "What IAM tool do you use for access management?",
+            "priority": "high",
+            "categories": ["tools"],
+        },
+        "data_classification": {
+            "description": "Data classification levels",
+            "prompt": "How do you classify your data (e.g., Public, Internal, Confidential)?",
+            "priority": "high",
+            "categories": ["processes"],
+        },
+        "retention_period": {
+            "description": "Data retention policy",
+            "prompt": "What's your standard data retention period?",
+            "priority": "high" if "GDPR" in frameworks else "medium",
+            "categories": ["processes", "legal"],
+        },
+        "incident_response_sla": {
+            "description": "Incident response SLA",
+            "prompt": "What's your incident response SLA or notification window?",
+            "priority": "high",
+            "categories": ["processes"],
+        },
+        "employee_count": {
+            "description": "Employee count",
+            "prompt": "How many employees does your organization have?",
+            "priority": "medium",
+            "categories": ["technical"],
+        },
+    }
+    
+    # Filter based on frameworks
+    if "GDPR" in frameworks:
+        all_keys["dpa_registration"] = {
+            "description": "DPA/ICO registration number",
+            "prompt": "Do you have a DPA or ICO registration number?",
+            "priority": "medium",
+            "categories": ["legal"],
+        }
+    
+    if "HIPAA" in frameworks:
+        all_keys["covered_entity_type"] = {
+            "description": "HIPAA entity type",
+            "prompt": "What type of entity are you under HIPAA?",
+            "priority": "high",
+            "categories": ["legal"],
+        }
+    
+    if "PCI-DSS" in frameworks:
+        all_keys["merchant_level"] = {
+            "description": "PCI-DSS merchant level",
+            "prompt": "What's your PCI-DSS merchant or service provider level?",
+            "priority": "high",
+            "categories": ["legal"],
+        }
+    
+    return all_keys
+
+
+def _extract_info_from_text(text: str, required_keys: dict) -> List[dict]:
+    """
+    Extract key-value pairs from user text using simple pattern matching.
+    Returns list of { key, value, confidence }.
+    """
+    import re
+    extracted = []
+    text_lower = text.lower()
+    text_orig = text  # Keep original for email extraction
+    
+    # Simple extraction patterns - these are the primary matchers
+    patterns = {
+        "ciso_contact": [
+            r"(?:ciso|chief\s+information\s+security\s+officer|security\s+officer|ciso\s+contact).*?[:\-]?\s*([^,\n]+(?:,\s*[\w\-\.]+@[\w\-\.][\w\-\.]*)?)",
+            r"^(?!.*[a-z]{5})(.+?(?:,\s*[\w\-\.]+@[\w\-\.][\w\-\.]*)?)\s*(?:ciso|chief|security)",  # Loose matching for short lines
+        ],
+        "dpo_contact": r"(?:dpo|data\s+protection\s+officer).*?[:\-]?\s*([^,\n]+(?:,\s*[\w\-\.]+@[\w\-\.][\w\-\.]*)?)",
+        "incident_email": r"(?:incident|security|report|breach).*?(?:email|contact|to).*?([\w\-\.]+@[\w\-\.][\w\-\.]*)|(?:report.*?(?:to|at)\s*)([\w\-\.]+@[\w\-\.][\w\-\.]*)",
+        "legal_contact": r"(?:legal|counsel|compliance).*?(?:contact|officer).*?[:\-]?\s*([^,\n]+(?:,\s*[\w\-\.]+@[\w\-\.][\w\-\.]*)?)",
+        "siem_tool": r"(?:siem|log|monitoring).*?(?:use|is|running|have).*?(\w+(?:\s+\w+)?)",
+        "iam_tool": r"(?:iam|identity|okta|azure|google).*?(?:use|is|running|have).*?(\w+(?:\s+\w+)?)",
+        "ticketing_tool": r"(?:ticket|jira|servicenow|fresh|linear|github).*?(?:use|is|running|have).*?(\w+(?:\s+\w+)?)",
+        "backup_tool": r"(?:backup|recovery|veeam|acronis|commvault).*?(?:use|is|running|have).*?(\w+(?:\s+\w+)?)",
+        "employee_count": r"(?:employee|staff|team|headcount).*?(?:is|has|around|about|approx|count)?.*?(\d+(?:\s*[-–]\s*\d+)?(?:\+)?)",
+        # More flexible patterns for data_classification - try multiple approaches
+        "data_classification": [
+            r"(?:classify|classification|levels?).*?(?:is|are|use).*?([\w\s,]+?)(?:\.|,|$)",  # Formal way
+            r"(?:data\s+classification|classification\s+levels?).*?[:\-]?\s*([\w\s,]+?)(?:\.|,|$)",  # With colon
+            r"^(?:public|internal|confidential|restricted)[\w\s,]*$",  # Just the levels themselves
+        ],
+        "retention_period": [
+            r"(?:retention|retain|keep|store).*?(?:for|period)?.*?(\d+\s+years?|[\w\s,]+?)(?:\.|,|$)",
+            r"(?:financial|customer|employee).*?(?:data)?.*?[:\-]?\s*(\d+\s+years?)",  # Specific data types
+        ],
+        "incident_response_sla": r"(?:incident|response|sla|notification|timeline).*?(?:within|in|is).*?(\d+\s+hours?|days?|[\w\s]+?)(?:\.|,|$)",
+    }
+    
+    for key, pattern in patterns.items():
+        # Handle list of patterns for same key
+        patterns_to_try = pattern if isinstance(pattern, list) else [pattern]
+        
+        for pat in patterns_to_try:
+            match = re.search(pat, text_lower, re.IGNORECASE | re.DOTALL)
+            if match:
+                # Get the first captured group that isn't None
+                value = None
+                for i in range(1, (match.lastindex or 0) + 1):
+                    if match.group(i):
+                        value = match.group(i).strip()
+                        break
+                
+                if value and len(value) > 2:  # Ensure we have meaningful content
+                    extracted.append({
+                        "key": key,
+                        "value": value,
+                        "confidence": 0.75,
+                    })
+                    break  # Stop after first successful match for this key
+    
+    return extracted
+
+
+def _get_missing_info(required_keys: dict, extracted_so_far: dict, priority_threshold: str = "high") -> List[dict]:
+    """
+    Identify what information is still missing.
+    Returns list of { key, description, prompt, priority }.
+    """
+    missing = []
+    
+    for key, metadata in required_keys.items():
+        if key not in extracted_so_far and metadata["priority"] == priority_threshold:
+            missing.append({
+                "key": key,
+                "description": metadata["description"],
+                "prompt": metadata["prompt"],
+                "priority": metadata["priority"],
+            })
+    
+    return missing
+
+
+def _extract_info_with_llm(user_message: str, missing_fields: List[dict], llm) -> List[dict]:
+    """
+    Use LLM to extract information from user message for fields that regex missed.
+    This is a fallback for complex extraction scenarios.
+    """
+    import json as _json
+    
+    if not missing_fields:
+        return []
+    
+    field_descriptions = "\n".join([f"- {f['key']}: {f['description']}" for f in missing_fields])
+    
+    system_prompt = (
+        "You are a data extraction assistant. Extract structured information from user messages.\n"
+        "Return ONLY valid JSON with extracted key-value pairs. Return empty object {} if nothing found.\n"
+        "Example: {\"data_classification\": \"Public, Internal, Confidential\", \"employee_count\": \"50\"}"
+    )
+    
+    user_prompt = (
+        f"Extract any of these fields from the user message:\n{field_descriptions}\n\n"
+        f"User message: {user_message}\n\n"
+        f"Return ONLY JSON with the fields you can extract."
+    )
+    
+    try:
+        response = llm.call([{"role": "user", "content": f"{system_prompt}\n\n{user_prompt}"}])
+        if hasattr(response, "content"):
+            response = response.content
+        response_text = str(response).strip()
+        
+        # Clean up JSON
+        import re as _re
+        response_text = _re.sub(r"^```json\s*", "", response_text)
+        response_text = _re.sub(r"^```\s*", "", response_text)
+        response_text = _re.sub(r"\s*```$", "", response_text)
+        
+        extracted_dict = _json.loads(response_text)
+        
+        # Convert to our format
+        result = []
+        for key, value in extracted_dict.items():
+            if value and isinstance(value, str) and len(value.strip()) > 0:
+                result.append({
+                    "key": key,
+                    "value": value.strip(),
+                    "confidence": 0.6,  # Lower confidence for LLM extraction
+                })
+        
+        return result
+    except Exception as e:
+        logger.debug(f"LLM extraction failed: {e}")
+        return []
+
+
+def _generate_suggestions(
+    user_message: str,
+    frameworks: list,
+    extracted_so_far: dict,
+    llm,
+) -> List[str]:
+    """
+    Generate context-aware suggestions for next input.
+    """
+    import json as _json
+    
+    system_prompt = (
+        "You are a compliance assistant helping collect organization details for compliance documentation.\n"
+        "Based on what the user just said, generate 3-4 short, helpful suggestions for what they could mention next.\n"
+        "Return ONLY a JSON array of strings, no explanation.\n"
+        "Suggestions should be natural continuations or related topics.\n"
+        "Example: ['We use Splunk for SIEM', 'Our incident response email is security@company.com']"
+    )
+    
+    already_mentioned = ", ".join([f"{k}: {v}" for k, v in extracted_so_far.items()])
+    user_prompt = (
+        f"User just said: {user_message}\n\n"
+        f"Frameworks: {', '.join(frameworks)}\n"
+        f"Already mentioned: {already_mentioned}\n\n"
+        f"Generate 3-4 natural suggestion options for what they could say next."
+    )
+    
+    try:
+        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+        raw = llm.call([{"role": "user", "content": full_prompt}])
+        if hasattr(raw, "content"):
+            raw = raw.content
+        raw = str(raw).strip()
+        # Clean up JSON
+        import re as _re
+        raw = _re.sub(r"^```json\s*", "", raw)
+        raw = _re.sub(r"^```\s*", "", raw)
+        raw = _re.sub(r"\s*```$", "", raw)
+        suggestions = _json.loads(raw)
+        return suggestions if isinstance(suggestions, list) else []
+    except Exception as e:
+        logger.warning(f"Failed to generate suggestions: {e}")
+        return []
+
+
+@app.post("/personalization/chat", tags=["Personalization"])
+async def personalization_chat(
+    request: PersonalizationChatRequest,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(require_write_access),
+):
+    """
+    Conversational personalization endpoint.
+    User provides free-form information, system extracts data and prompts for missing info.
+    """
+    frameworks = request.frameworks
+    extracted_so_far = request.extracted_info.copy()
+    
+    # Get required information keys for these frameworks
+    required_keys = _get_required_info_keys(frameworks, request.policy_types, request.procedure_types)
+    
+    # Extract information from user message
+    llm = get_llm_with_fallback(temperature=0.3)
+    newly_extracted = _extract_info_from_text(request.user_message, required_keys)
+    
+    # If extraction was minimal, try LLM-based extraction for missing high-priority fields
+    current_missing = _get_missing_info(required_keys, {**extracted_so_far, **{item["key"]: item["value"] for item in newly_extracted}}, priority_threshold="high")
+    
+    if newly_extracted and current_missing:  # Only use LLM if we already extracted something and still have gaps
+        try:
+            llm_extraction = _extract_info_with_llm(request.user_message, current_missing, llm)
+            newly_extracted.extend(llm_extraction)
+        except:
+            pass  # Fall back to regex-only extraction if LLM fails
+    
+    # Update accumulated info
+    for item in newly_extracted:
+        extracted_so_far[item["key"]] = item["value"]
+    
+    # Build conversation history
+    conversation = request.conversation_history.copy()
+    conversation.append({"role": "user", "content": request.user_message})
+    
+    # Check for missing high-priority info
+    missing_high = _get_missing_info(required_keys, extracted_so_far, priority_threshold="high")
+    
+    # Generate suggestions for next input
+    suggestions = _generate_suggestions(request.user_message, frameworks, extracted_so_far, llm)
+    
+    # Generate assistant response
+    is_complete = len(missing_high) == 0
+    
+    if is_complete:
+        assistant_msg = (
+            "Great! I have all the key information I need. Your compliance documents are ready to be generated. "
+            "Feel free to add any additional details or skip to generation."
+        )
+    elif missing_high:
+        next_prompt = missing_high[0]["prompt"]
+        assistant_msg = f"Thanks for that information! {next_prompt}"
+    else:
+        assistant_msg = "Got it. Anything else you'd like to add?"
+    
+    conversation.append({"role": "assistant", "content": assistant_msg})
+    
+    return PersonalizationChatResponse(
+        extracted_info=newly_extracted,
+        accumulated_info=extracted_so_far,
+        suggestions=suggestions,
+        missing_info=missing_high,
+        assistant_message=assistant_msg,
+        conversation_history=conversation,
+        is_complete=is_complete,
+    )
+
+
+@app.get("/personalization/suggestions/{framework}", tags=["Personalization"])
+async def get_personalization_suggestions(
+    framework: str,
+    query: Optional[str] = None,
+    current_user: User = Depends(require_write_access),
+):
+    """
+    Get framework-specific suggestions for personalization.
+    Optional query parameter to filter suggestions.
+    """
+    suggestion_map = {
+        "GDPR": [
+            "We store data in EU data centers",
+            "We have a Data Protection Officer (DPO)",
+            "Our retention period is 3 years",
+            "We use Okta for identity management",
+            "Incident response SLA is 72 hours",
+            "We classify data as: Public, Internal, Confidential",
+            "CISO contact: security@company.com",
+            "We use Splunk for SIEM",
+        ],
+        "HIPAA": [
+            "We are a Healthcare Provider",
+            "We encrypt data at rest and in transit",
+            "Our backup is tested monthly",
+            "Breach notification within 60 days",
+            "BAA agreements in place with all vendors",
+            "We use Microsoft 365 (HIPAA compliant)",
+            "Incident response team established",
+        ],
+        "PCI-DSS": [
+            "We are a Level 1 Merchant",
+            "We use tokenization for payment data",
+            "PCI scanning performed quarterly",
+            "We use Fortanix for key management",
+            "Network segmentation in place",
+            "Multi-factor authentication enabled",
+            "Card data not stored locally",
+        ],
+        "SOC 2": [
+            "Type II audit completed annually",
+            "Security monitoring 24/7",
+            "Change management process in place",
+            "Incident response plan documented",
+            "Access controls reviewed quarterly",
+            "Data backup tested monthly",
+        ],
+    }
+    
+    suggestions = suggestion_map.get(framework, [])
+    
+    # Filter by query if provided
+    if query:
+        query_lower = query.lower()
+        suggestions = [s for s in suggestions if query_lower in s.lower()]
+    
+    return {"framework": framework, "suggestions": suggestions}
 
 
 # ─── Combined Compliance Suite ────────────────────────────────────────────────

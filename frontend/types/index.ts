@@ -204,7 +204,7 @@ export type WizardPhase =
   | 'analyzing'
   | 'frameworks'
   | 'doc_types'
-  | 'personalizing'
+  | 'conv_personalize'
   | 'generating'
   | 'done';
 

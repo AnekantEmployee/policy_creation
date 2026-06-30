@@ -181,6 +181,40 @@ class ComplianceAnalysis(BaseModel):
     analysis_timestamp: str
 
 
+# ─── Conversational Personalization ───────────────────────────────────────────
+
+class ConversationMessage(BaseModel):
+    role: str = Field(..., description="'user' or 'assistant'")
+    content: str
+
+
+class ExtractedInfo(BaseModel):
+    key: str = Field(..., description="snake_case key (e.g., 'siem_tool', 'ciso_contact')")
+    value: str = Field(..., description="Extracted value")
+    confidence: float = Field(ge=0.0, le=1.0, description="Confidence level 0-1")
+
+
+class PersonalizationChatRequest(BaseModel):
+    session_id: int
+    user_message: str
+    frameworks: List[str] = Field(..., description="Selected frameworks")
+    policy_types: List[str] = Field(..., description="Selected policy types")
+    procedure_types: List[str] = Field(..., description="Selected procedure types")
+    conversation_history: List[ConversationMessage] = Field(default_factory=list)
+    extracted_info: Dict[str, str] = Field(default_factory=dict, description="Previously extracted info")
+    org_context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class PersonalizationChatResponse(BaseModel):
+    extracted_info: List[ExtractedInfo] = Field(description="Newly extracted information from user message")
+    accumulated_info: Dict[str, str] = Field(description="All accumulated information so far")
+    suggestions: List[str] = Field(description="Context-aware suggestions for user")
+    missing_info: List[Dict[str, str]] = Field(description="List of missing important info with prompts")
+    assistant_message: str = Field(description="Assistant response to user")
+    conversation_history: List[ConversationMessage]
+    is_complete: bool = Field(description="Whether we have sufficient info to proceed")
+
+
 # ─── Status / Health ─────────────────────────────────────────────────────────
 
 class SystemStatus(BaseModel):

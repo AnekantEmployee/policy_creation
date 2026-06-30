@@ -17,7 +17,8 @@ export const ChatGenerating: React.FC<Props> = ({ active, done }) => {
   const {
     orgDescription, orgName, sessionId,
     selectedGenFrameworks, selectedPolicyTypes, selectedProcedureTypes,
-    answers, setResults, setPhase, reset,
+    frameworkDocConfigs, convPersonalizeAnswers, answers,
+    setResults, setPhase, reset,
   } = useWizardStore();
 
   const [log, setLog] = useState<string[]>([]);
@@ -32,29 +33,54 @@ export const ChatGenerating: React.FC<Props> = ({ active, done }) => {
     if (!active) return;
 
     const generate = async () => {
-      const orgContext: Record<string, string> = { org_name: orgName, org_description: orgDescription, ...answers };
+      // Merge answers from both structured Q&A and conversational personalization
+      const orgContext: Record<string, string> = {
+        org_name: orgName,
+        org_description: orgDescription,
+        ...answers,
+        ...convPersonalizeAnswers,
+      };
       const allPolicies:   GeneratedPolicy[]   = [];
       const allProcedures: GeneratedProcedure[] = [];
 
       for (const fw of selectedGenFrameworks) {
-        if (selectedPolicyTypes.length > 0) {
-          addLog(`Generating ${selectedPolicyTypes.length} policies for ${fw}…`);
+        // Use per-framework config if available, fall back to global selections
+        const fwConfig = frameworkDocConfigs[fw];
+        const policyTypes   = fwConfig ? fwConfig.policies   : selectedPolicyTypes;
+        const procedureTypes = fwConfig ? fwConfig.procedures : selectedProcedureTypes;
+
+        if (policyTypes.length > 0) {
+          addLog(`Generating ${policyTypes.length} policies for ${fw}…`);
           try {
-            const res = await policiesApi.generate({ org_description: orgDescription, org_name: orgName || 'Your Organization', framework: fw, policy_types: selectedPolicyTypes, org_context: orgContext, session_id: sessionId });
+            const res = await policiesApi.generate({
+              org_description: orgDescription,
+              org_name: orgName || 'Your Organization',
+              framework: fw,
+              policy_types: policyTypes,
+              org_context: orgContext,
+              session_id: sessionId,
+            });
             allPolicies.push(...res.policies);
             addLog(`✓ ${res.policies.length} ${fw} policies done`);
-          } catch (e: unknown) {
+          } catch {
             addLog(`✗ ${fw} policies failed`);
             toast.error(`${fw} policy generation failed`);
           }
         }
-        if (selectedProcedureTypes.length > 0) {
-          addLog(`Generating ${selectedProcedureTypes.length} procedures for ${fw}…`);
+        if (procedureTypes.length > 0) {
+          addLog(`Generating ${procedureTypes.length} procedures for ${fw}…`);
           try {
-            const res = await proceduresApi.generate({ org_description: orgDescription, org_name: orgName || 'Your Organization', framework: fw, procedure_types: selectedProcedureTypes, org_context: orgContext, session_id: sessionId });
+            const res = await proceduresApi.generate({
+              org_description: orgDescription,
+              org_name: orgName || 'Your Organization',
+              framework: fw,
+              procedure_types: procedureTypes,
+              org_context: orgContext,
+              session_id: sessionId,
+            });
             allProcedures.push(...res.procedures);
             addLog(`✓ ${res.procedures.length} ${fw} procedures done`);
-          } catch (e: unknown) {
+          } catch {
             addLog(`✗ ${fw} procedures failed`);
           }
         }

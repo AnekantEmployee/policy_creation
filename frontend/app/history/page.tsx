@@ -413,14 +413,14 @@ export default function HistoryPage(_props: PageProps<'/history'>) {
                                                   return acc;
                                                 }, {} as Record<string, typeof detail.policies>);
                                                 return Object.keys(frameworkGroups).sort().map((fw) => (
-                                                  <div key={fw}>
+                                                  <div key={`policies-${fw}`}>
                                                     <div className="flex items-center gap-2 mb-1.5">
                                                       <Badge variant="primary" size="sm">{fw}</Badge>
                                                       <span className="text-xs text-neutral-400">({frameworkGroups[fw].length})</span>
                                                     </div>
                                                     <div className="space-y-1 ml-2">
-                                                      {frameworkGroups[fw].map((p) => (
-                                                        <div key={p.policy_id} className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg text-sm">
+                                                      {frameworkGroups[fw].map((p, idx) => (
+                                                        <div key={`${p.policy_id}-${fw}-${idx}`} className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg text-sm">
                                                           <span className="font-medium text-neutral-900 truncate">{p.title}</span>
                                                           <Badge variant="info" size="sm">v{p.version}</Badge>
                                                         </div>
@@ -448,14 +448,14 @@ export default function HistoryPage(_props: PageProps<'/history'>) {
                                                   return acc;
                                                 }, {} as Record<string, typeof detail.procedures>);
                                                 return Object.keys(frameworkGroups).sort().map((fw) => (
-                                                  <div key={fw}>
+                                                  <div key={`procedures-${fw}`}>
                                                     <div className="flex items-center gap-2 mb-1.5">
                                                       <Badge variant="secondary" size="sm">{fw}</Badge>
                                                       <span className="text-xs text-neutral-400">({frameworkGroups[fw].length})</span>
                                                     </div>
                                                     <div className="space-y-1 ml-2">
-                                                      {frameworkGroups[fw].map((p) => (
-                                                        <div key={p.procedure_id} className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg text-sm">
+                                                      {frameworkGroups[fw].map((p, idx) => (
+                                                        <div key={`${p.procedure_id}-${fw}-${idx}`} className="flex items-center justify-between py-2 px-3 bg-neutral-50 rounded-lg text-sm">
                                                           <span className="font-medium text-neutral-900 truncate">{p.title}</span>
                                                           <span className="text-xs text-neutral-400">{p.frequency}</span>
                                                         </div>

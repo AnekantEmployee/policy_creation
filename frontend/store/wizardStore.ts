@@ -9,6 +9,12 @@ import type {
   WizardPhase,
 } from '@/types';
 
+// Per-framework doc type config — separate policy/procedure selections per framework
+export interface FrameworkDocConfig {
+  policies: string[];
+  procedures: string[];
+}
+
 interface WizardState {
   phase: WizardPhase;
   setPhase: (p: WizardPhase) => void;
@@ -30,13 +36,23 @@ interface WizardState {
   setSelectedFrameworks: (fw: string[]) => void;
   toggleFramework: (id: string) => void;
 
-  // Step 4 — doc type selection
+  // Step 4 — doc type selection (per-framework config)
+  frameworkDocConfigs: Record<string, FrameworkDocConfig>;
+  setFrameworkDocConfigs: (configs: Record<string, FrameworkDocConfig>) => void;
+  // Legacy flat lists (still used by generation loop)
   selectedPolicyTypes: string[];
   selectedProcedureTypes: string[];
   selectedGenFrameworks: string[];
-  setDocTypes: (pol: string[], proc: string[], fw: string[]) => void;
+  setDocTypes: (pol: string[], proc: string[], fw: string[], configs?: Record<string, FrameworkDocConfig>) => void;
 
-  // Step 5 — personalization
+  // Step 5 — conversational personalization
+  convPersonalizeAnswers: Record<string, string>;   // accumulated extracted info
+  convPersonalizeHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
+  setConvPersonalizeAnswers: (answers: Record<string, string>) => void;
+  setConvPersonalizeHistory: (history: Array<{ role: 'user' | 'assistant'; content: string }>) => void;
+  mergeConvPersonalizeAnswers: (newAnswers: Record<string, string>) => void;
+
+  // Step 5 (legacy) — structured personalization questions
   questions: PersonalizationQuestion[];
   answers: Record<string, string>;
   questionIndex: number;
@@ -57,18 +73,28 @@ interface WizardState {
   reset: () => void;
 }
 
+const DEFAULT_FRAMEWORK_DOC_CONFIG: FrameworkDocConfig = {
+  policies: ['data_protection', 'incident_response', 'access_control'],
+  procedures: ['incident_response', 'data_breach', 'access_review'],
+};
+
 const DEFAULT: Omit<WizardState,
   'setPhase' | 'setOrgInfo' | 'setProfile' | 'setSelectedFrameworks' | 'toggleFramework' |
-  'setDocTypes' | 'setQuestions' | 'setAnswer' | 'nextQuestion' | 'previousQuestion' | 'removeCurrentAnswer' | 'setResults' |
+  'setFrameworkDocConfigs' | 'setDocTypes' |
+  'setConvPersonalizeAnswers' | 'setConvPersonalizeHistory' | 'mergeConvPersonalizeAnswers' |
+  'setQuestions' | 'setAnswer' | 'nextQuestion' | 'previousQuestion' | 'removeCurrentAnswer' | 'setResults' |
   'loadFromSession' | 'reset'
 > = {
   phase: 'org_info',
   orgName: '', orgDescription: '', orgWebsite: '', orgCountry: '',
   profile: null, sessionId: null,
   selectedFrameworks: [],
+  frameworkDocConfigs: {},
   selectedPolicyTypes: ['data_protection', 'incident_response', 'access_control'],
   selectedProcedureTypes: ['incident_response', 'data_breach', 'access_review'],
   selectedGenFrameworks: [],
+  convPersonalizeAnswers: {},
+  convPersonalizeHistory: [],
   questions: [], answers: {}, questionIndex: 0,
   policies: [], procedures: [],
 };
@@ -87,8 +113,18 @@ export const useWizardStore = create<WizardState>()(
             ? s.selectedFrameworks.filter((f) => f !== id)
             : [...s.selectedFrameworks, id],
         })),
-      setDocTypes: (selectedPolicyTypes, selectedProcedureTypes, selectedGenFrameworks) =>
-        set({ selectedPolicyTypes, selectedProcedureTypes, selectedGenFrameworks }),
+      setFrameworkDocConfigs: (frameworkDocConfigs) => set({ frameworkDocConfigs }),
+      setDocTypes: (selectedPolicyTypes, selectedProcedureTypes, selectedGenFrameworks, configs) =>
+        set((s) => ({
+          selectedPolicyTypes,
+          selectedProcedureTypes,
+          selectedGenFrameworks,
+          frameworkDocConfigs: configs ?? s.frameworkDocConfigs,
+        })),
+      setConvPersonalizeAnswers: (convPersonalizeAnswers) => set({ convPersonalizeAnswers }),
+      setConvPersonalizeHistory: (convPersonalizeHistory) => set({ convPersonalizeHistory }),
+      mergeConvPersonalizeAnswers: (newAnswers) =>
+        set((s) => ({ convPersonalizeAnswers: { ...s.convPersonalizeAnswers, ...newAnswers } })),
       setQuestions: (questions) => set({ questions, questionIndex: 0, answers: {} }),
       setAnswer: (key, val) => set((s) => ({ answers: { ...s.answers, [key]: val } })),
       nextQuestion: () => set((s) => ({ questionIndex: s.questionIndex + 1 })),
@@ -120,13 +156,10 @@ export const useWizardStore = create<WizardState>()(
     }),
     {
       name: 'wizard-store',
-      version: 2, // bump version to discard any stored `phase` from old persisted state
-      migrate: (persistedState, version) => {
-        // v0 → v1/v2: just return persisted state; phase will be reset by onRehydrateStorage.
+      version: 3, // bump to discard old persisted state shape
+      migrate: (persistedState) => {
         return persistedState as WizardState;
       },
-      // Persist org info and results only — never persist phase/progress state.
-      // When the user navigates back to /wizard they always start fresh at org_info.
       partialize: (state) => ({
         orgName: state.orgName,
         orgDescription: state.orgDescription,
@@ -136,10 +169,8 @@ export const useWizardStore = create<WizardState>()(
         selectedFrameworks: state.selectedFrameworks,
         policies: state.policies,
         procedures: state.procedures,
-        // phase is intentionally NOT persisted — always start at org_info on next visit
+        // phase intentionally NOT persisted
       }),
-      // On rehydration, always force phase back to org_info regardless of what
-      // may have been stored in an older version of the persisted state.
       onRehydrateStorage: () => (state) => {
         if (state) {
           state.phase = 'org_info';

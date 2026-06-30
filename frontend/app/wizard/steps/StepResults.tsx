@@ -16,8 +16,8 @@ const PolicyCard: React.FC<{ policy: GeneratedPolicy }> = ({ policy }) => {
   const [open, setOpen] = useState(false);
   return (
     <div className="border border-neutral-200 rounded-xl overflow-hidden">
-      <button
-        className="w-full flex items-center justify-between p-4 text-left hover:bg-neutral-50 transition-colors"
+      <div
+        className="w-full flex items-center justify-between p-4 text-left hover:bg-neutral-50 transition-colors cursor-pointer"
         onClick={() => setOpen((o) => !o)}
       >
         <div className="flex items-center gap-3 min-w-0">
@@ -41,7 +41,7 @@ const PolicyCard: React.FC<{ policy: GeneratedPolicy }> = ({ policy }) => {
           </button>
           {open ? <ChevronDown className="h-4 w-4 text-neutral-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0" />}
         </div>
-      </button>
+      </div>
       {open && (
         <div className="border-t border-neutral-200 p-4 space-y-4 animate-fade-in">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
@@ -77,7 +77,7 @@ const ProcedureCard: React.FC<{ proc: GeneratedProcedure }> = ({ proc }) => {
   const [open, setOpen] = useState(false);
   return (
     <div className="border border-neutral-200 rounded-xl overflow-hidden">
-      <button className="w-full flex items-center justify-between p-4 text-left hover:bg-neutral-50 transition-colors"
+      <div className="w-full flex items-center justify-between p-4 text-left hover:bg-neutral-50 transition-colors cursor-pointer"
         onClick={() => setOpen((o) => !o)}>
         <div className="flex items-center gap-3 min-w-0">
           <div className="h-8 w-8 rounded-lg bg-secondary-50 flex items-center justify-center shrink-0">
@@ -100,7 +100,7 @@ const ProcedureCard: React.FC<{ proc: GeneratedProcedure }> = ({ proc }) => {
           </button>
           {open ? <ChevronDown className="h-4 w-4 text-neutral-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-neutral-400 shrink-0" />}
         </div>
-      </button>
+      </div>
       {open && (
         <div className="border-t border-neutral-200 p-4 space-y-4 animate-fade-in">
           {proc.purpose && <div className="border-l-2 border-secondary-300 pl-4"><p className="text-xs font-semibold text-secondary-700 uppercase tracking-wide mb-1">Purpose</p><p className="text-sm text-neutral-700">{proc.purpose}</p></div>}

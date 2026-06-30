@@ -7,7 +7,7 @@ const STEPS = [
   { label: 'Org Info',      phases: ['org_info'] },
   { label: 'Frameworks',    phases: ['analyzing', 'frameworks'] },
   { label: 'Doc Types',     phases: ['doc_types'] },
-  { label: 'Personalize',   phases: ['personalizing'] },
+  { label: 'Personalise',   phases: ['conv_personalize'] },
   { label: 'Generate',      phases: ['generating', 'done'] },
 ];
 

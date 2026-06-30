@@ -7,8 +7,8 @@ import { ChatOrgInfo }    from './chat/ChatOrgInfo';
 import { ChatAnalyzing }  from './chat/ChatAnalyzing';
 import { ChatFrameworks } from './chat/ChatFrameworks';
 import { ChatDocTypes }   from './chat/ChatDocTypes';
-import { ChatPersonalize } from './chat/ChatPersonalize';
 import { ChatGenerating } from './chat/ChatGenerating';
+import { StepConversationPersonalize } from './steps/StepConversationPersonalize';
 import { StepResults }    from './steps/StepResults';
 import { ProgressBar }    from './ProgressBar';
 import { ChevronLeft } from 'lucide-react';
@@ -33,7 +33,7 @@ export const WizardShell: React.FC = () => {
 
   // Handle back navigation through phases
   const handleBack = () => {
-    const phases = ['org_info', 'analyzing', 'frameworks', 'doc_types', 'personalizing', 'generating'];
+    const phases = ['org_info', 'analyzing', 'frameworks', 'doc_types', 'conv_personalize', 'generating'];
     const currentIdx = phases.indexOf(phase);
     if (currentIdx > 0) {
       setPhase(phases[currentIdx - 1] as any);
@@ -112,7 +112,7 @@ export const WizardShell: React.FC = () => {
 };
 
 const ChatThread: React.FC<{ phase: string }> = ({ phase }) => {
-  const phases = ['org_info', 'analyzing', 'frameworks', 'doc_types', 'personalizing', 'generating'];
+  const phases = ['org_info', 'analyzing', 'frameworks', 'doc_types', 'conv_personalize', 'generating'];
   const currentIdx = phases.indexOf(phase);
 
   return (
@@ -123,7 +123,7 @@ const ChatThread: React.FC<{ phase: string }> = ({ phase }) => {
       {currentIdx >= 1 && <ChatAnalyzing active={phase === 'analyzing'} done={currentIdx > 1} />}
       {currentIdx >= 2 && <ChatFrameworks active={phase === 'frameworks'} done={currentIdx > 2} />}
       {currentIdx >= 3 && <ChatDocTypes active={phase === 'doc_types'} done={currentIdx > 3} />}
-      {currentIdx >= 4 && <ChatPersonalize active={phase === 'personalizing'} done={currentIdx > 4} />}
+      {currentIdx >= 4 && <StepConversationPersonalize active={phase === 'conv_personalize'} done={currentIdx > 4} />}
       {currentIdx >= 5 && <ChatGenerating active={phase === 'generating'} done={false} />}
     </div>
   );
