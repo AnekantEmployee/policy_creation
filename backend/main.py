@@ -82,6 +82,36 @@ def _graceful_shutdown():
 # Register atexit only — let uvicorn own SIGINT/SIGTERM
 atexit.register(_graceful_shutdown)
 
+def _run_pending_migrations(db: DBSession):
+    """Run any pending database migrations."""
+    from sqlalchemy import text
+    
+    try:
+        # Migration 1: Add personalization_data column if it doesn't exist
+        result = db.execute(
+            text("""
+            SELECT COUNT(*) 
+            FROM pragma_table_info('sessions') 
+            WHERE name='personalization_data'
+            """)
+        ).scalar()
+        
+        if result == 0:
+            logger.info("Running migration: Adding personalization_data column...")
+            db.execute(
+                text("""
+                ALTER TABLE sessions 
+                ADD COLUMN personalization_data JSON DEFAULT '{}'
+                """)
+            )
+            db.commit()
+            logger.info("✓ Migration complete: personalization_data column added")
+        else:
+            logger.debug("✓ personalization_data column already exists")
+    except Exception as e:
+        logger.warning(f"⚠️  Migration check failed: {e}")
+        db.rollback()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage app startup and shutdown."""
@@ -92,6 +122,13 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing database...")
         init_db()
         logger.info("✓ Database tables created/verified")
+        
+        # Run pending migrations
+        db = SessionLocal()
+        try:
+            _run_pending_migrations(db)
+        finally:
+            db.close()
         
         # Create demo user if it doesn't exist
         db = SessionLocal()

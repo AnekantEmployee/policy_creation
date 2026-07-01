@@ -158,39 +158,31 @@ def get_full_history(db: DBSession, limit: int = 50) -> List[dict]:
     Sessions created during a wizard run that was interrupted before generation
     are excluded — they would otherwise appear as empty scans.
     """
-    from db.models import Policy, Procedure
-    from sqlalchemy import func
-
-    # Subqueries: count policies and procedures per session
-    policy_counts = (
-        db.query(Policy.session_id, func.count(Policy.id).label("policy_count"))
-        .group_by(Policy.session_id)
-        .subquery()
-    )
-    procedure_counts = (
-        db.query(Procedure.session_id, func.count(Procedure.id).label("procedure_count"))
-        .group_by(Procedure.session_id)
-        .subquery()
-    )
-
-    sessions = (
-        db.query(Session)
-        .outerjoin(policy_counts,    Session.id == policy_counts.c.session_id)
-        .outerjoin(procedure_counts, Session.id == procedure_counts.c.session_id)
-        .filter(
-            # Keep only sessions that have at least one doc
-            (func.coalesce(policy_counts.c.policy_count, 0) +
-             func.coalesce(procedure_counts.c.procedure_count, 0)) > 0
+    try:
+        # Try to load all sessions ordered by creation date (newest first)
+        sessions = (
+            db.query(Session)
+            .order_by(desc(Session.created_at))
+            .all()
         )
-        .order_by(desc(Session.created_at))
-        .limit(limit)
-        .all()
-    )
+    except Exception as e:
+        # If personalization_data column doesn't exist, log and return empty
+        # The migration script should be run on the production database
+        print(f"⚠ Warning: Could not load sessions - {str(e)}")
+        print("  Run 'python db/migrate_add_personalization.py' to fix this")
+        return []
 
     result = []
     for s in sessions:
-        # Use getattr with default to handle missing column gracefully
-        personalization = getattr(s, 'personalization_data', None) or {}
+        # Filter: only include sessions with at least one policy or procedure
+        if len(s.policies) == 0 and len(s.procedures) == 0:
+            continue
+        
+        # Safely get personalization data - may not exist in older databases
+        try:
+            personalization = s.personalization_data or {}
+        except AttributeError:
+            personalization = {}
         
         result.append({
             "session_id":   s.id,
@@ -209,4 +201,9 @@ def get_full_history(db: DBSession, limit: int = 50) -> List[dict]:
             "procedure_count": len(s.procedures),
             "created_at":   s.created_at.isoformat() if s.created_at else "",
         })
+        
+        # Stop once we've collected enough results
+        if len(result) >= limit:
+            break
+    
     return result
