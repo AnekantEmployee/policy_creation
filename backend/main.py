@@ -1743,13 +1743,13 @@ if __name__ == "__main__":
     import uvicorn
     logger.info("")
     logger.info("🚀 Starting FastAPI server...")
-    logger.info("📍 API docs: http://localhost:8000/docs")
-    logger.info("📊 Health check: http://localhost:8000/health")
+    logger.info("📍 API docs: http://10.4.32.170:8001/docs")
+    logger.info("📊 Health check: http://10.4.32.170:8001/health")
     logger.info("")
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=8001,
         reload=True,
         log_level="info",
         access_log=True

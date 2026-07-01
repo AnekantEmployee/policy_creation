@@ -50,7 +50,7 @@ Edit `.env.local` to configure:
 
 ```env
 # API Configuration
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://10.4.32.170:8001
 NEXT_PUBLIC_API_TIMEOUT=30000
 
 # App Configuration
@@ -81,7 +81,7 @@ npm run lint
 
 ## API Integration
 
-The frontend connects to the backend API at `http://localhost:8000`. Available endpoints:
+The frontend connects to the backend API at `http://10.4.32.170:8001`. Available endpoints:
 
 ### Organizations
 - `GET /organizations` - List all organizations

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const apiClient = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000',
+  baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://10.4.32.170:8001',
   timeout: 120_000, // AI generation can take 1-2 min
   headers: { 'Content-Type': 'application/json' },
 });

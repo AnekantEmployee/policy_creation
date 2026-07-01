@@ -128,7 +128,7 @@ export default function SettingsPage(_props: PageProps<'/settings'>) {
           <CardBody>
             <div className="space-y-3 text-sm">
               {[
-                { label: 'Backend URL',    value: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000 (default)' },
+                { label: 'Backend URL',    value: process.env.NEXT_PUBLIC_API_URL ?? 'http://10.4.32.170:8001 (default)' },
                 { label: 'API Timeout',    value: '120 seconds' },
                 { label: 'Frontend Port',  value: '3000' },
               ].map(({ label, value }) => (

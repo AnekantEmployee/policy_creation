@@ -110,7 +110,7 @@ Start the backend:
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-API docs available at: `http://localhost:8000/docs`
+API docs available at: `http://10.4.32.170:8001/docs`
 
 ---
 
@@ -124,7 +124,7 @@ npm install
 Create a `.env.local` file in the `frontend/` directory:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://10.4.32.170:8001
 ```
 
 Start the development server:
@@ -184,7 +184,7 @@ On first startup the backend auto-creates two accounts:
 | GET    | `/admin/users`                  | List all users (admin only)        |
 | POST   | `/admin/users/{id}/approve`     | Approve a pending user (admin only)|
 
-Full interactive docs: `http://localhost:8000/docs`
+Full interactive docs: `http://10.4.32.170:8001/docs`
 
 ---
 

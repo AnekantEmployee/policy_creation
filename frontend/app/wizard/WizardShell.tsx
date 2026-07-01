@@ -132,7 +132,7 @@ const ChatThread: React.FC<{ phase: string }> = ({ phase }) => {
 const BackendStatus: React.FC = () => {
   const [status, setStatus] = React.useState<'checking' | 'online' | 'offline'>('checking');
   React.useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'}/health`, { signal: AbortSignal.timeout(3000) })
+    fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://10.4.32.170:8001'}/health`, { signal: AbortSignal.timeout(3000) })
       .then(() => setStatus('online'))
       .catch(() => setStatus('offline'));
   }, []);

@@ -11,7 +11,7 @@ import requests
 import streamlit as st
 from config.llm_config import get_llm_with_fallback
 
-API_BASE = "http://localhost:8000"
+API_BASE = "http://10.4.32.170:8001"
 
 # ─── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -768,7 +768,7 @@ with st.sidebar:
     if sidebar_sel != st.session_state.page:
         st.session_state.page = sidebar_sel; st.rerun()
     st.markdown("---")
-    st.caption("Backend: `localhost:8000`")
+    st.caption("Backend: `10.4.32.170:8001`")
     try:
         r = requests.get(f"{API_BASE}/status", timeout=3)
         if r.status_code == 200:
