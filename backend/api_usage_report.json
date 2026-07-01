@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-06-30T21:58:14.564505",
+  "timestamp": "2026-07-01T13:05:30.344648",
   "results": {
     "groq": {
       "keys_checked": 5,
@@ -7,17 +7,23 @@
         {
           "key": "GROQ_API_KEY_1",
           "status": "active",
-          "rate_limit_requests": null,
-          "rate_limit_remaining": null,
-          "rate_limit_reset": null,
+          "basic_auth": "ok",
+          "heavy_request": "ok",
+          "sequential_requests": "ok",
+          "rate_limit_limit": null,
+          "rate_limit_remaining": "999",
+          "rate_limit_reset": "1m26.4s",
           "models_available": 17
         },
         {
           "key": "GROQ_API_KEY_2",
           "status": "active",
-          "rate_limit_requests": null,
-          "rate_limit_remaining": null,
-          "rate_limit_reset": null,
+          "basic_auth": "ok",
+          "heavy_request": "ok",
+          "sequential_requests": "ok",
+          "rate_limit_limit": null,
+          "rate_limit_remaining": "999",
+          "rate_limit_reset": "1m26.4s",
           "models_available": 17
         },
         {
@@ -28,17 +34,23 @@
         {
           "key": "GROQ_API_KEY_4",
           "status": "active",
-          "rate_limit_requests": null,
-          "rate_limit_remaining": null,
-          "rate_limit_reset": null,
+          "basic_auth": "ok",
+          "heavy_request": "ok",
+          "sequential_requests": "ok",
+          "rate_limit_limit": null,
+          "rate_limit_remaining": "999",
+          "rate_limit_reset": "1m26.4s",
           "models_available": 17
         },
         {
           "key": "GROQ_API_KEY_5",
           "status": "active",
-          "rate_limit_requests": null,
-          "rate_limit_remaining": null,
-          "rate_limit_reset": null,
+          "basic_auth": "ok",
+          "heavy_request": "ok",
+          "sequential_requests": "ok",
+          "rate_limit_limit": null,
+          "rate_limit_remaining": "999",
+          "rate_limit_reset": "1m26.4s",
           "models_available": 17
         }
       ]

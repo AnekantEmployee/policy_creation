@@ -632,6 +632,7 @@ async def generate_policy(
     org_description = body.get("org_description", "")
     policy_types = body.get("policy_types", ["data_protection", "incident_response", "access_control"])
     org_context = body.get("org_context", {})
+    personalization_data = body.get("personalization_data", {})  # CISO, DPO, tools, etc.
     session_id_from_request = body.get("session_id")  # link back to profiling session
 
     if framework not in FRAMEWORKS:
@@ -679,7 +680,12 @@ async def generate_policy(
                 regions_detected=[],
                 analysis_summary="",
                 recommended_frameworks=[],
+                personalization_data=personalization_data,
             )
+        else:
+            # Update existing session with personalization data
+            if personalization_data:
+                session.personalization_data = personalization_data
         
         # Save policies
         crud.save_policies(db=db, session_id=session.id, policies_response=result.model_dump())
@@ -708,6 +714,7 @@ async def generate_procedure(
     org_description = body.get("org_description", "")
     procedure_types = body.get("procedure_types", ["incident_response", "data_breach", "access_review"])
     org_context = body.get("org_context", {})
+    personalization_data = body.get("personalization_data", {})  # CISO, DPO, tools, etc.
     session_id_from_request = body.get("session_id")  # link back to profiling session
 
     if framework not in FRAMEWORKS:
@@ -753,7 +760,12 @@ async def generate_procedure(
                 regions_detected=[],
                 analysis_summary="",
                 recommended_frameworks=[],
+                personalization_data=personalization_data,
             )
+        else:
+            # Update existing session with personalization data
+            if personalization_data:
+                session.personalization_data = personalization_data
 
         crud.save_procedures(db=db, session_id=session.id, procedures_response=result.model_dump())
         db.commit()
@@ -875,6 +887,8 @@ async def get_session_detail(
             "org_name": session.organization.name or session.organization.description,
             "org_description": session.organization.description,
             "org_type": session.organization.org_type,
+            "org_country": session.organization.country or None,
+            "org_website": session.organization.website or None,
             "industries": session.industries_detected or [],
             "regions": session.regions_detected or [],
             "summary": session.analysis_summary,
@@ -1743,13 +1757,15 @@ if __name__ == "__main__":
     import uvicorn
     logger.info("")
     logger.info("🚀 Starting FastAPI server...")
-    logger.info("📍 API docs: http://10.4.32.170:8001/docs")
-    logger.info("📊 Health check: http://10.4.32.170:8001/health")
+    host = os.getenv("API_HOST", "0.0.0.0")
+    port = int(os.getenv("API_PORT", "8001"))
+    logger.info(f"📍 API docs: http://localhost:{port}/docs (or replace localhost with your server IP)")
+    logger.info(f"📊 Health check: http://localhost:{port}/health")
     logger.info("")
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=8001,
+        host=host,
+        port=port,
         reload=True,
         log_level="info",
         access_log=True

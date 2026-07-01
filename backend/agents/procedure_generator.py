@@ -412,6 +412,7 @@ def generate_procedures(
                     verbose=False,
                     tracing=False,
                 )
+                logger.debug(f"Attempting procedure generation (attempt {attempt + 1}/{max_retries})")
                 result = crew.kickoff()
                 raw_output = str(result)
                 logger.info(f"Raw LLM output length for {proc_type}: {len(raw_output)} chars")
@@ -435,9 +436,18 @@ def generate_procedures(
                     raise ValueError("Failed to parse procedure JSON")
 
             except Exception as e:
-                logger.warning(f"Procedure {proc_type} attempt {attempt + 1} failed: {e}")
+                error_str = str(e)
+                logger.warning(f"Procedure {proc_type} attempt {attempt + 1} failed: {error_str}")
+                
+                # Log more detail on API key errors
+                if "invalid_api_key" in error_str.lower() or "unauthorized" in error_str.lower():
+                    logger.warning(f"⚠ API authentication issue detected on attempt {attempt + 1}")
+                
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt + random.uniform(0, 1))
+                    # Exponential backoff: 2s, 4s, 8s
+                    wait_time = 2 ** attempt + random.uniform(0, 1)
+                    logger.debug(f"Waiting {wait_time:.1f}s before retry...")
+                    time.sleep(wait_time)
 
         if not success:
             generated_procedures.append(_create_fallback_procedure(

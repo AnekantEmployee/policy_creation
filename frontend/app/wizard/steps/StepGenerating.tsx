@@ -10,7 +10,7 @@ export const StepGenerating: React.FC = () => {
   const {
     orgDescription, orgName, sessionId,
     selectedGenFrameworks, selectedPolicyTypes, selectedProcedureTypes,
-    answers, setResults, setPhase,
+    answers, convPersonalizeAnswers, setResults, setPhase,
   } = useWizardStore();
 
   const [progress, setProgress] = useState<string[]>([]);
@@ -22,6 +22,7 @@ export const StepGenerating: React.FC = () => {
         org_name: orgName,
         org_description: orgDescription,
         ...answers,
+        ...convPersonalizeAnswers,
       };
 
       const allPolicies: NonNullable<ReturnType<typeof useWizardStore.getState>['policies']> = [];
@@ -38,6 +39,7 @@ export const StepGenerating: React.FC = () => {
               framework: fw,
               policy_types: selectedPolicyTypes,
               org_context: orgContext,
+              personalization_data: convPersonalizeAnswers,
               session_id: sessionId,
             });
             allPolicies.push(...res.policies);
@@ -58,6 +60,7 @@ export const StepGenerating: React.FC = () => {
               framework: fw,
               procedure_types: selectedProcedureTypes,
               org_context: orgContext,
+              personalization_data: convPersonalizeAnswers,
               session_id: sessionId,
             });
             allProcedures.push(...res.procedures);

@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { ArrowLeft, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
 import { Button } from '../components/Button';
 
-export default function SettingsPage(_props: PageProps<'/settings'>) {
+export default function SettingsPage() {
   const router = useRouter();
   const { isAuthenticated, initializeFromStorage } = useAuthStore();
   const [status, setStatus]         = useState<SystemStatus | null>(null);
@@ -128,9 +128,9 @@ export default function SettingsPage(_props: PageProps<'/settings'>) {
           <CardBody>
             <div className="space-y-3 text-sm">
               {[
-                { label: 'Backend URL',    value: process.env.NEXT_PUBLIC_API_URL ?? 'http://10.4.32.170:8001 (default)' },
-                { label: 'API Timeout',    value: '120 seconds' },
-                { label: 'Frontend Port',  value: '3000' },
+                { label: 'Backend URL',    value: process.env.NEXT_PUBLIC_API_URL ?? '(not configured in .env.local)' },
+                { label: 'API Timeout',    value: process.env.NEXT_PUBLIC_API_TIMEOUT ?? '120000 ms' },
+                { label: 'App Version',    value: process.env.NEXT_PUBLIC_APP_VERSION ?? '1.0.0' },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center justify-between py-2 border-b border-neutral-100 last:border-0">
                   <span className="text-neutral-500">{label}</span>

@@ -91,6 +91,7 @@ class Session(Base):
     analysis_summary     = Column(Text, nullable=True)
     selected_frameworks  = Column(JSON, default=list)   # list of framework IDs user picked
     recommended_frameworks = Column(JSON, default=list) # full AI recommendation payload
+    personalization_data = Column(JSON, default=dict)   # extracted org context (CISO, DPO, tools, etc.)
     created_at           = Column(DateTime, default=datetime.utcnow)
 
     organization = relationship("Organization", back_populates="sessions")

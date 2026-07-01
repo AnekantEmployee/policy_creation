@@ -58,6 +58,7 @@ export const ChatGenerating: React.FC<Props> = ({ active, done }) => {
               framework: fw,
               policy_types: policyTypes,
               org_context: orgContext,
+              personalization_data: convPersonalizeAnswers,
               session_id: sessionId,
             });
             allPolicies.push(...res.policies);
@@ -76,6 +77,7 @@ export const ChatGenerating: React.FC<Props> = ({ active, done }) => {
               framework: fw,
               procedure_types: procedureTypes,
               org_context: orgContext,
+              personalization_data: convPersonalizeAnswers,
               session_id: sessionId,
             });
             allProcedures.push(...res.procedures);

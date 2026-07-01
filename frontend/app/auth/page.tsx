@@ -395,7 +395,7 @@ function AuthPageInner() {
 
 // ─── Default export — wraps inner component in Suspense ─────────────────────
 
-export default function AuthPage(_props: PageProps<'/auth'>) {
+export default function AuthPage() {
   return (
     <Suspense fallback={
       <main className="min-h-screen bg-gradient-to-br from-neutral-900 via-primary-950 to-neutral-900 flex items-center justify-center">

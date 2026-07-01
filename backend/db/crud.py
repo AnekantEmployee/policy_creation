@@ -51,6 +51,7 @@ def create_session(
     analysis_summary: str,
     recommended_frameworks: list,
     selected_frameworks: Optional[List[str]] = None,
+    personalization_data: Optional[dict] = None,
 ) -> Session:
     session = Session(
         org_id=org_id,
@@ -59,6 +60,7 @@ def create_session(
         analysis_summary=analysis_summary,
         recommended_frameworks=recommended_frameworks,
         selected_frameworks=selected_frameworks or [],
+        personalization_data=personalization_data or {},
     )
     db.add(session)
     db.flush()
@@ -187,6 +189,9 @@ def get_full_history(db: DBSession, limit: int = 50) -> List[dict]:
 
     result = []
     for s in sessions:
+        # Use getattr with default to handle missing column gracefully
+        personalization = getattr(s, 'personalization_data', None) or {}
+        
         result.append({
             "session_id":   s.id,
             "org_id":       s.org_id,
@@ -199,6 +204,7 @@ def get_full_history(db: DBSession, limit: int = 50) -> List[dict]:
             "summary":      s.analysis_summary,
             "selected_frameworks": s.selected_frameworks or [],
             "recommended_frameworks": s.recommended_frameworks or [],
+            "personalization": personalization,
             "policy_count":    len(s.policies),
             "procedure_count": len(s.procedures),
             "created_at":   s.created_at.isoformat() if s.created_at else "",

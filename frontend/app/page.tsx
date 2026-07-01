@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { LandingPage } from './landing';
 import { useAuthStore } from '@/store/authStore';
 
-export default function Home(_props: PageProps<'/'>) {
+export default function Home() {
   const router = useRouter();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [hydrated, setHydrated] = useState(false);

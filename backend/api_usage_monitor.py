@@ -80,18 +80,28 @@ def check_groq_usage() -> Dict[str, Any]:
             
             # Try to get API status
             with httpx.Client(timeout=10) as client:
-                # Attempt a simple models list call
+                # 1. Test: Simple models list call
+                print("  [1/3] Testing basic authentication...")
                 response = client.get(
                     "https://api.groq.com/openai/v1/models",
-                    headers=headers
+                    headers=headers,
+                    timeout=10
                 )
                 
                 print_info(f"Status Code: {response.status_code}")
                 
+                basic_auth_ok = False
+                rate_limit_limit = None
+                rate_limit_remaining = None
+                rate_limit_reset = None
+                models_available = 0
+                
                 if response.status_code == 200:
                     print_success("✓ Authentication successful")
+                    basic_auth_ok = True
                     data = response.json()
-                    print_info(f"Available models: {len(data.get('data', []))}")
+                    models_available = len(data.get('data', []))
+                    print_info(f"Available models: {models_available}")
                     
                     # Check rate limit headers
                     rate_limit_limit = response.headers.get("x-ratelimit-limit-requests")
@@ -102,34 +112,27 @@ def check_groq_usage() -> Dict[str, Any]:
                         print_info(f"Rate Limit (Requests): {rate_limit_remaining}/{rate_limit_limit}")
                     if rate_limit_reset:
                         print_info(f"Rate Limit Reset: {rate_limit_reset}")
-                    
-                    results.append({
-                        "key": key_name,
-                        "status": "active",
-                        "rate_limit_requests": rate_limit_limit,
-                        "rate_limit_remaining": rate_limit_remaining,
-                        "rate_limit_reset": rate_limit_reset,
-                        "models_available": len(data.get('data', []))
-                    })
                 
                 elif response.status_code == 401:
                     print_error("Authentication failed (401)")
                     error_data = response.json()
-                    print_error(f"Error: {error_data.get('error', {}).get('message', 'Unknown error')}")
+                    error_msg = error_data.get('error', {}).get('message', 'Unknown error')
+                    print_error(f"Error: {error_msg}")
                     results.append({
                         "key": key_name,
                         "status": "invalid_key",
-                        "error": error_data.get('error', {}).get('message', 'Invalid API key')
+                        "error": error_msg
                     })
+                    continue
                 
                 elif response.status_code == 429:
-                    print_error("Rate limited (429)")
-                    print_warning(f"Headers: {dict(response.headers)}")
+                    print_error("Rate limited on basic test (429)")
                     results.append({
                         "key": key_name,
                         "status": "rate_limited",
-                        "headers": dict(response.headers)
+                        "error": "Rate limited on models endpoint"
                     })
+                    continue
                 
                 elif response.status_code == 403:
                     print_error("Access forbidden (403)")
@@ -141,13 +144,115 @@ def check_groq_usage() -> Dict[str, Any]:
                         "status": "forbidden",
                         "error": error_msg
                     })
+                    continue
                 
                 else:
                     print_error(f"Unexpected status: {response.status_code}")
                     results.append({
                         "key": key_name,
                         "status": f"http_{response.status_code}",
-                        "response": response.text[:200]
+                        "error": response.text[:200]
+                    })
+                    continue
+                
+                # 2. Test: Heavy request with dummy data (simulate real workload)
+                if basic_auth_ok:
+                    print("  [2/3] Testing heavy request (document generation simulation)...")
+                    heavy_prompt = """Write a comprehensive information security policy for a financial services organization. 
+                    Include: 1) Policy purpose and scope, 2) Roles and responsibilities, 3) Key controls and procedures, 
+                    4) Asset classification scheme, 5) Access control requirements, 6) Incident response workflow, 
+                    7) Compliance monitoring approach, 8) Annual review schedule. Make it detailed (800+ words)."""
+                    
+                    heavy_payload = {
+                        "model": "llama-3.3-70b-versatile",
+                        "messages": [
+                            {"role": "system", "content": "You are a compliance expert. Provide detailed, actionable content."},
+                            {"role": "user", "content": heavy_prompt}
+                        ],
+                        "max_tokens": 2000,
+                        "temperature": 0.3
+                    }
+                    
+                    try:
+                        heavy_response = client.post(
+                            "https://api.groq.com/openai/v1/chat/completions",
+                            headers=headers,
+                            json=heavy_payload,
+                            timeout=30
+                        )
+                        
+                        if heavy_response.status_code == 200:
+                            print_success("✓ Heavy request successful")
+                            heavy_data = heavy_response.json()
+                            response_length = len(heavy_data.get('choices', [{}])[0].get('message', {}).get('content', ''))
+                            print_info(f"Response length: {response_length} chars")
+                            
+                            # Update rate limit info from heavy request
+                            rate_limit_remaining = heavy_response.headers.get("x-ratelimit-remaining-requests")
+                            rate_limit_reset = heavy_response.headers.get("x-ratelimit-reset-requests")
+                            
+                            heavy_request_ok = True
+                        elif heavy_response.status_code == 429:
+                            print_error("✗ Rate limited on heavy request (429)")
+                            heavy_request_ok = False
+                        elif heavy_response.status_code == 401:
+                            print_error("✗ Auth failed on heavy request (401)")
+                            heavy_request_ok = False
+                        else:
+                            print_error(f"✗ Heavy request failed with status {heavy_response.status_code}")
+                            error_detail = heavy_response.json().get('error', {}).get('message', 'Unknown')
+                            print_error(f"  Error: {error_detail}")
+                            heavy_request_ok = False
+                    except Exception as e:
+                        print_error(f"✗ Heavy request error: {str(e)}")
+                        heavy_request_ok = False
+                    
+                    # 3. Test: Concurrent-like behavior (multiple requests in sequence)
+                    print("  [3/3] Testing multiple sequential requests...")
+                    multi_ok = True
+                    for attempt in range(2):
+                        quick_payload = {
+                            "model": "llama-3.1-8b-instant",
+                            "messages": [
+                                {"role": "user", "content": "Generate a 2-step security procedure in JSON format with steps array."}
+                            ],
+                            "max_tokens": 500,
+                            "temperature": 0.2
+                        }
+                        
+                        try:
+                            multi_response = client.post(
+                                "https://api.groq.com/openai/v1/chat/completions",
+                                headers=headers,
+                                json=quick_payload,
+                                timeout=15
+                            )
+                            
+                            if multi_response.status_code == 200:
+                                print_success(f"  ✓ Sequential request {attempt + 1} successful")
+                            elif multi_response.status_code == 429:
+                                print_warning(f"  ⚠ Rate limited on sequential request {attempt + 1}")
+                                multi_ok = False
+                                break
+                            else:
+                                print_warning(f"  ⚠ Sequential request {attempt + 1} returned {multi_response.status_code}")
+                                multi_ok = False
+                                break
+                        except Exception as e:
+                            print_warning(f"  ⚠ Sequential request {attempt + 1} error: {str(e)[:50]}")
+                            multi_ok = False
+                            break
+                    
+                    results.append({
+                        "key": key_name,
+                        "status": "active",
+                        "basic_auth": "ok",
+                        "heavy_request": "ok" if heavy_request_ok else "failed",
+                        "sequential_requests": "ok" if multi_ok else "failed",
+                        "rate_limit_limit": rate_limit_limit,
+                        "rate_limit_remaining": rate_limit_remaining,
+                        "rate_limit_reset": rate_limit_reset,
+                        "models_available": models_available
                     })
         
         except Exception as e:
@@ -426,16 +531,51 @@ def main():
     active_groq = sum(1 for r in groq_status if r.get("status") == "active")
     forbidden_groq = sum(1 for r in groq_status if r.get("status") == "forbidden")
     invalid_groq = sum(1 for r in groq_status if r.get("status") == "invalid_key")
+    rate_limited_groq = sum(1 for r in groq_status if r.get("status") == "rate_limited")
     
-    print_info(f"Groq Keys: {active_groq} active, {forbidden_groq} forbidden, {invalid_groq} invalid")
+    print_info(f"Groq Keys Summary:")
+    print_info(f"  • Active: {active_groq}")
+    print_info(f"  • Forbidden: {forbidden_groq}")
+    print_info(f"  • Invalid: {invalid_groq}")
+    print_info(f"  • Rate Limited: {rate_limited_groq}")
+    
+    # Detailed analysis of active keys
+    for result in groq_status:
+        if result.get("status") == "active":
+            key_name = result.get("key", "Unknown")
+            heavy_status = result.get("heavy_request", "unknown")
+            sequential_status = result.get("sequential_requests", "unknown")
+            
+            print(f"\n  {Colors.BOLD}{key_name}{Colors.RESET}:")
+            print_info(f"    • Heavy request: {heavy_status}")
+            print_info(f"    • Sequential requests: {sequential_status}")
+            
+            if heavy_status == "failed":
+                print_warning(f"    ⚠ This key may have issues with document generation workloads")
+            if sequential_status == "failed":
+                print_warning(f"    ⚠ This key may be hitting rate limits quickly")
     
     if forbidden_groq > 0:
-        print_error("⚠ CRITICAL: Some Groq keys are forbidden (organization_restricted)")
+        print_error("\n⚠ CRITICAL: Some Groq keys are forbidden (organization_restricted)")
         print_error("  Action: Contact Groq support at https://support.groq.com")
         print_error("  Likely causes:")
         print_error("    - Account suspension due to ToS violation")
         print_error("    - Billing issues or payment failure")
         print_error("    - Excessive abuse patterns detected")
+    
+    if rate_limited_groq > 0:
+        print_warning(f"\n⚠ {rate_limited_groq} key(s) are currently rate-limited")
+        print_warning("  Recommendation: Wait a few minutes before retrying, or rotate to another key")
+    
+    # Check if any keys support heavy workloads
+    heavy_capable_keys = sum(1 for r in groq_status if r.get("status") == "active" and r.get("heavy_request") == "ok")
+    if heavy_capable_keys == 0 and active_groq > 0:
+        print_warning("\n⚠ WARNING: No keys passed heavy request test")
+        print_warning("  This suggests all active keys may struggle with document generation")
+        print_warning("  → Check CrewAI logs for specific error messages")
+        print_warning("  → Consider using fewer concurrent generation requests")
+    elif heavy_capable_keys > 0:
+        print_success(f"\n✓ {heavy_capable_keys}/{active_groq} active key(s) support heavy workloads")
     
     openai_status = all_results["openai"]
     if openai_status.get("status") == "active":

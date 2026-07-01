@@ -103,6 +103,7 @@ export interface PolicyGenerationRequest {
   framework: string;
   policy_types: string[];
   org_context?: Record<string, string>;
+  personalization_data?: Record<string, string>;
 }
 
 export interface PolicyGenerationResponse {
@@ -143,6 +144,7 @@ export interface ProcedureGenerationRequest {
   framework: string;
   procedure_types: string[];
   org_context?: Record<string, string>;
+  personalization_data?: Record<string, string>;
 }
 
 export interface ProcedureGenerationResponse {
@@ -166,6 +168,7 @@ export interface HistorySession {
   summary: string;
   selected_frameworks: string[];
   recommended_frameworks: FrameworkMatch[];
+  personalization?: Record<string, string>;
   policy_count: number;
   procedure_count: number;
   created_at: string;

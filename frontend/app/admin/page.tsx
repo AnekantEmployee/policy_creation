@@ -41,7 +41,7 @@ const ROLE_COLORS: Record<RoleType, string> = {
   auditor: 'bg-amber-100 text-amber-700',
 };
 
-export default function AdminDashboard(_props: PageProps<'/admin'>) {
+export default function AdminDashboard() {
   const router = useRouter();
   const { user, isAuthenticated, initializeFromStorage } = useAuthStore();
 

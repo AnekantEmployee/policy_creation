@@ -104,15 +104,18 @@ def get_llm_with_fallback(temperature: float = 0.7):
     """Get LLM instance with fallback - uses current (non-rotating) API key"""
     from crewai import LLM
     
+    if not GROQ_API_KEYS and not OPENAI_API_KEY:
+        logger.warning("No LLM API keys configured, using default LLM")
+    
     api_key = get_current_api_key()
     model = get_current_model()
     
     if GROQ_API_KEYS:
-        logger.debug(f"Initializing Groq LLM with model: {model}")
+        logger.debug(f"Initializing Groq LLM with model: {model} (key index: {_api_key_index})")
         return LLM(model=model, api_key=api_key, temperature=temperature,
                    max_tokens=8192)
     elif OPENAI_API_KEY:
-        logger.debug("Initializing OpenAI LLM")
+        logger.debug("Initializing OpenAI LLM fallback")
         return LLM(model="gpt-4", api_key=api_key, temperature=temperature,
                    max_tokens=8192)
     else:
@@ -128,6 +131,9 @@ def get_fresh_llm(temperature: float = 0.7, rotate: bool = True):
     """
     from crewai import LLM
     
+    if not GROQ_API_KEYS and not OPENAI_API_KEY:
+        logger.warning("No LLM API keys configured, using default LLM")
+    
     if rotate:
         api_key = get_next_api_key()
         model = get_next_model()
@@ -138,11 +144,11 @@ def get_fresh_llm(temperature: float = 0.7, rotate: bool = True):
         logger.info(f"Random selection: Model: {model}")
     
     if GROQ_API_KEYS:
-        logger.debug(f"Initializing fresh Groq LLM with model: {model}")
+        logger.debug(f"Initializing fresh Groq LLM with model: {model} (key index: {_api_key_index})")
         return LLM(model=model, api_key=api_key, temperature=temperature,
                    max_tokens=8192)
     elif OPENAI_API_KEY:
-        logger.debug("Initializing fresh OpenAI LLM")
+        logger.debug("Initializing fresh OpenAI LLM fallback")
         return LLM(model="gpt-4", api_key=api_key, temperature=temperature,
                    max_tokens=8192)
     else:

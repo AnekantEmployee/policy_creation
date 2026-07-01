@@ -14,6 +14,8 @@ venv/
 .venv/
 env/
 .env
+.env.local
+!.env.example
 
 # Database
 *.sqlite3
@@ -41,6 +43,17 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Monitoring & API usage reports
+api_usage_monitor.py
+api_usage_report.json
+monitor_api_continuous.py
+
+# Utility & setup scripts
+add_column.py
+check_db.py
+migrate_and_seed.py
+migrate_add_personalization.py
 
 # Streamlit
 .streamlit/secrets.toml

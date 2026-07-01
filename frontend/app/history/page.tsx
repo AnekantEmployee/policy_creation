@@ -18,7 +18,7 @@ import toast from 'react-hot-toast';
 // Roles that are allowed to delete sessions or re-run scans
 const WRITE_ROLES = ['admin', 'compliance_officer'];
 
-export default function HistoryPage(_props: PageProps<'/history'>) {
+export default function HistoryPage() {
   const router = useRouter();
   const { loadFromSession } = useWizardStore();
   const { user, isAuthenticated, initializeFromStorage } = useAuthStore();
