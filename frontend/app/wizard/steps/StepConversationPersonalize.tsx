@@ -38,22 +38,27 @@ interface SuggestionBarProps {
   placeholder: string;
   disabled?: boolean;
   submitLabel?: string;
+  contextualSuggestions?: string[]; // suggestions specific to current question
 }
 
 const SuggestionBar: React.FC<SuggestionBarProps> = ({
-  value, onChange, onSubmit, suggestions, placeholder, disabled, submitLabel = 'Send',
+  value, onChange, onSubmit, suggestions, placeholder, disabled, submitLabel = 'Send', contextualSuggestions = [],
 }) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeSuggIdx, setActiveSuggIdx] = useState(-1);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Prioritize contextual suggestions, fall back to generic suggestions
+  const suggestionPool = contextualSuggestions.length > 0 ? contextualSuggestions : suggestions;
+
+  // Only show dropdown if user has typed something (value.length > 0)
   // Filter suggestions to those matching the current input (case-insensitive)
   const filtered = value.trim().length > 0
-    ? suggestions.filter(s => s.toLowerCase().includes(value.toLowerCase())).slice(0, 5)
-    : suggestions.slice(0, 5);
+    ? suggestionPool.filter(s => s.toLowerCase().includes(value.toLowerCase())).slice(0, 5)
+    : [];
 
-  const shouldShow = showDropdown && filtered.length > 0;
+  const shouldShow = showDropdown && value.trim().length > 0 && filtered.length > 0;
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (shouldShow) {
@@ -108,11 +113,11 @@ const SuggestionBar: React.FC<SuggestionBarProps> = ({
         </button>
       </div>
 
-      {/* Live suggestions dropdown */}
+      {/* Live suggestions dropdown — positioned BELOW the input bar, only shows when typing */}
       {shouldShow && (
         <div
           ref={dropdownRef}
-          className="absolute left-0 right-0 bottom-full mb-1.5 bg-white border border-neutral-200 rounded-xl shadow-lg z-20 overflow-hidden"
+          className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-neutral-200 rounded-xl shadow-lg z-20 overflow-hidden"
         >
           {filtered.map((s, i) => (
             <button
@@ -179,6 +184,28 @@ function getFrameworkSuggestions(frameworks: string[]): string[] {
   const out: string[] = [];
   frameworks.forEach(fw => { if (map[fw]) out.push(...map[fw]); });
   return out;
+}
+
+// Get contextual suggestions based on the specific question being answered
+function getContextualSuggestions(questionKey?: string): string[] {
+  const map: Record<string, string[]> = {
+    ciso_contact: ['Jane Smith, ciso@company.com', 'Security Officer, security-lead@company.com', 'Chief Information Security Officer, ciso@acme.org'],
+    dpo_contact: ['John Doe, dpo@company.com', 'Data Protection Officer, privacy@company.com', 'DPO, dpo-team@company.com'],
+    incident_email: ['security@company.com', 'incidents@company.com', 'security-team@company.com', 'breach-report@company.com'],
+    legal_contact: ['General Counsel, gc@company.com', 'compliance@company.com', 'External Counsel, counsel@law-firm.com'],
+    siem_tool: ['Splunk Enterprise', 'Microsoft Sentinel', 'Datadog Security Monitoring', 'IBM QRadar', 'Elastic Security'],
+    ticketing_tool: ['JIRA Cloud', 'ServiceNow', 'Freshdesk', 'Linear', 'GitHub Issues'],
+    iam_tool: ['Okta Identity Cloud', 'Microsoft Entra ID (Azure AD)', 'Google Workspace', 'Ping Identity', 'Auth0'],
+    backup_tool: ['Veeam Backup & Replication', 'AWS Backup', 'Acronis Cyber Protect', 'Commvault', 'Zerto'],
+    data_classification: ['Public, Internal, Confidential, Restricted', 'None, Confidential, Secret', 'Public, Sensitive, Highly Sensitive'],
+    retention_period: ['3 years for customer data, 7 years for financial', '1 year general, 5 years sensitive', '2 years for transaction logs, 10 years for compliance'],
+    incident_response_sla: ['72 hours', '24 hours', '48 hours', '60 days for HIPAA', '30 days'],
+    employee_count: ['50–100', '200–500', '500–1000', '1000–5000', '5000+'],
+    dpa_registration: ['ZA123456 (UK ICO)', 'SE-1234567 (Sweden)', 'FR-123456 (France)', 'DE-1234567890 (Germany)'],
+    covered_entity_type: ['Healthcare Provider', 'Health Plan', 'Health Clearinghouse', 'Business Associate'],
+    merchant_level: ['Level 1 (>6M transactions/yr)', 'Level 2 (1–6M transactions/yr)', 'Level 3 (20K–1M transactions/yr)', 'Level 4 (<20K transactions/yr)', 'Service Provider Level 1'],
+  };
+  return map[questionKey ?? ''] ?? [];
 }
 
 // ─── Extracted info pill display ──────────────────────────────────────────────
@@ -255,6 +282,35 @@ export const StepConversationPersonalize: React.FC<Props> = ({ active, done }) =
 
   // ── helpers ──
   const addMessage = (msg: ConvMessage) => setMessages(prev => [...prev, msg]);
+
+  // ── deriving contextual suggestions ──
+  const getContextualSuggestionsForPhase = useCallback((): string[] => {
+    if (phase === 'initial') {
+      // In initial phase, suggest broad categories of info
+      return [
+        'Our CISO is Jane Smith, ciso@company.com',
+        'We use Okta for IAM and Splunk for SIEM',
+        'We classify data as Public, Internal, Confidential',
+        'Our incident response email is security@company.com',
+        'We have 200 employees in India',
+        'Data retention is 3 years for customer data',
+      ];
+    }
+    if (phase === 'targeted' && missingFields[targetedIdx]) {
+      // In targeted phase, suggestions match the specific question being asked
+      return getContextualSuggestions(missingFields[targetedIdx].key);
+    }
+    // In open phase, show general compliance practices
+    return [
+      'We also use Datadog for monitoring',
+      'Our backup is tested quarterly',
+      'All vendors sign NDAs and DPAs',
+      'We conduct annual security awareness training',
+      'Our cloud infrastructure is on AWS (Mumbai)',
+      'We encrypt all data at rest using AES-256',
+      ...getFrameworkSuggestions(selectedGenFrameworks),
+    ];
+  }, [phase, targetedIdx, missingFields, selectedGenFrameworks]);
 
   const buildSuggestions = useCallback((serverSuggestions: string[], info: Record<string, string>) => {
     const fwSpecific = getFrameworkSuggestions(selectedGenFrameworks);
@@ -496,6 +552,7 @@ export const StepConversationPersonalize: React.FC<Props> = ({ active, done }) =
           onChange={setInputValue}
           onSubmit={handleSend}
           suggestions={suggestions}
+          contextualSuggestions={getContextualSuggestionsForPhase()}
           placeholder={placeholderText}
           disabled={loading}
           submitLabel={submitLabel}

@@ -238,30 +238,99 @@ def profile_organization(
 
 
 def _rule_based_fallback(description: str, country: Optional[str]) -> OrgProfileResponse:
-    """Simple rule-based framework recommendation when AI fails."""
+    """Smart rule-based framework recommendation when AI fails."""
     desc_lower = description.lower()
     matches = []
+
+    # Industry detection from description
+    industries_detected = []
+    industry_keywords = {
+        "healthcare": ["healthcare", "health", "medical", "hospital", "clinic", "pharma", "biotech", "health tech"],
+        "finance": ["finance", "fintech", "bank", "insurance", "investment", "payment", "trading", "fund"],
+        "government": ["government", "public sector", "federal", "agency", "ministry", "regulatory"],
+        "manufacturing": ["manufacturing", "factory", "production", "industrial", "machinery"],
+        "energy": ["energy", "power", "utility", "oil", "gas", "nuclear"],
+        "retail": ["retail", "ecommerce", "store", "commerce", "shopping", "marketplace"],
+        "technology": ["technology", "saas", "software", "cloud", "it", "data", "ai", "web"],
+        "telecom": ["telecom", "telecom", "network", "communication", "mobile", "isp"],
+        "transportation": ["transportation", "logistics", "shipping", "delivery", "automotive", "vehicle", "fleet"],
+        "education": ["education", "university", "school", "student", "learning"],
+    }
+
+    for industry, keywords in industry_keywords.items():
+        for keyword in keywords:
+            if keyword in desc_lower:
+                industries_detected.append(industry)
+                break
+
+    # Regional detection
+    regions_detected = [country] if country else []
+    country_lower = country.lower() if country else ""
+
+    if not country_lower:
+        # Try to infer region from description
+        region_keywords = {
+            "EU": ["eu", "europe", "germany", "france", "uk", "netherlands", "spain", "italy", "sweden"],
+            "India": ["india", "indian"],
+            "US": ["us", "usa", "america", "united states", "american"],
+            "UK": ["uk", "united kingdom", "british"],
+            "Global": ["global", "international", "worldwide", "multinational"],
+        }
+        for region, keywords in region_keywords.items():
+            for keyword in keywords:
+                if keyword in desc_lower:
+                    regions_detected = [region]
+                    country_lower = region.lower()
+                    break
 
     for fw_id, fw_meta in FRAMEWORKS.items():
         score = 0.0
         reason = ""
+
+        # 1. Trigger-based matching (direct keywords)
         for trigger in fw_meta.get("triggers", []):
             if trigger in desc_lower:
                 score += 0.25
                 reason += f"Matches '{trigger}'. "
 
-        if country:
-            country_lower = country.lower()
+        # 2. Industry-based matching
+        fw_industries = fw_meta.get("industries", [])
+        for detected_industry in industries_detected:
+            if detected_industry in fw_industries:
+                score += 0.2
+                reason += f"Common in {detected_industry} industry. "
+
+        # 3. Country/Region-based matching
+        if country_lower:
             if "india" in country_lower and fw_id == "DPDP":
-                score += 0.4
+                score += 0.5
                 reason += "Indian org - DPDP Act 2023 mandatory. "
-            if any(c in country_lower for c in ["uk", "germany", "france", "eu"]) and fw_id == "GDPR":
-                score += 0.4
+            if any(c in country_lower for c in ["uk", "germany", "france", "eu", "europe"]) and fw_id == "GDPR":
+                score += 0.5
                 reason += "EU/UK org - GDPR mandatory. "
             if "us" in country_lower or "america" in country_lower:
-                if fw_id in ["HIPAA", "SOX", "CCPA", "NIST_CSF", "PCI_DSS"]:
-                    score += 0.2
-                    reason += "US-based org. "
+                if fw_id == "HIPAA" and "healthcare" in industries_detected:
+                    score += 0.5
+                    reason += "US healthcare org - HIPAA mandatory. "
+                if fw_id == "PCI_DSS" and "finance" in industries_detected:
+                    score += 0.4
+                    reason += "US financial org - PCI DSS likely required. "
+                if fw_id in ["NIST_CSF", "SOC2"] and any(ind in industries_detected for ind in ["technology", "government"]):
+                    score += 0.3
+                    reason += "US tech/gov org. "
+
+        # 4. Default recommendations for all organizations (best practices)
+        if fw_id in ["ISO27001", "SOC2"]:
+            # Everyone should consider these
+            if len(industries_detected) > 0 and score < 0.5:
+                score += 0.3
+                reason += "Industry best practice. "
+            elif len(industries_detected) == 0:
+                score += 0.25
+                reason += "General best practice for organizations. "
+
+        # Normalize score
+        score = min(score, 1.0)
 
         if score >= 0.3:
             matches.append(FrameworkMatch(
@@ -271,8 +340,8 @@ def _rule_based_fallback(description: str, country: Optional[str]) -> OrgProfile
                 color=fw_meta["color"],
                 region=fw_meta["region"],
                 description=fw_meta["description"],
-                relevance_score=min(score, 1.0),
-                relevance_reason=reason.strip() or "Based on org description keywords",
+                relevance_score=score,
+                relevance_reason=reason.strip() or "Based on org profile analysis",
                 is_mandatory=score >= 0.65,
                 max_fine=fw_meta["max_fine"],
                 notification_window=fw_meta["notification_window"],
@@ -283,12 +352,13 @@ def _rule_based_fallback(description: str, country: Optional[str]) -> OrgProfile
     return OrgProfileResponse(
         org_description=description,
         org_type=description,
-        industries_detected=[],
-        regions_detected=[country] if country else [],
-        recommended_frameworks=matches[:6],
+        industries_detected=industries_detected,
+        regions_detected=regions_detected,
+        recommended_frameworks=matches[:8],
         analysis_summary=(
-            f"Rule-based analysis for '{description}'. "
-            "Please verify these recommendations with a compliance expert."
+            f"Analyzed '{description}' as {', '.join(industries_detected) if industries_detected else 'a general organization'}. "
+            f"Recommended frameworks apply to {', '.join(regions_detected) if regions_detected else 'global'} operations. "
+            "AI analysis unavailable; please verify recommendations with a compliance expert."
         ),
         timestamp=datetime.now().isoformat(),
     )

@@ -1,0 +1,96 @@
+{
+  "timestamp": "2026-06-30T21:58:14.564505",
+  "results": {
+    "groq": {
+      "keys_checked": 5,
+      "results": [
+        {
+          "key": "GROQ_API_KEY_1",
+          "status": "active",
+          "rate_limit_requests": null,
+          "rate_limit_remaining": null,
+          "rate_limit_reset": null,
+          "models_available": 17
+        },
+        {
+          "key": "GROQ_API_KEY_2",
+          "status": "active",
+          "rate_limit_requests": null,
+          "rate_limit_remaining": null,
+          "rate_limit_reset": null,
+          "models_available": 17
+        },
+        {
+          "key": "GROQ_API_KEY_3",
+          "status": "invalid_key",
+          "error": "Invalid API Key"
+        },
+        {
+          "key": "GROQ_API_KEY_4",
+          "status": "active",
+          "rate_limit_requests": null,
+          "rate_limit_remaining": null,
+          "rate_limit_reset": null,
+          "models_available": 17
+        },
+        {
+          "key": "GROQ_API_KEY_5",
+          "status": "active",
+          "rate_limit_requests": null,
+          "rate_limit_remaining": null,
+          "rate_limit_reset": null,
+          "models_available": 17
+        }
+      ]
+    },
+    "openai": {
+      "status": "not_configured"
+    },
+    "tavily": {
+      "status": "active",
+      "rate_limit_requests": null,
+      "rate_limit_remaining": null,
+      "search_api": "working"
+    },
+    "litellm_config": {
+      "groq_keys": 5,
+      "openai_key": false,
+      "tavily_key": true,
+      "groq_models": [
+        "groq/llama-3.3-70b-versatile",
+        "groq/llama-3.1-70b-versatile",
+        "groq/llama-3.1-8b-instant"
+      ],
+      "config": {
+        "provider": "groq",
+        "api_keys_count": 5,
+        "models": [
+          "groq/llama-3.3-70b-versatile",
+          "groq/llama-3.1-70b-versatile",
+          "groq/llama-3.3-70b-versatile",
+          "groq/llama-3.1-8b-instant"
+        ],
+        "current_model": "groq/llama-3.3-70b-versatile",
+        "current_api_key_index": 0
+      },
+      "rotation_info": {
+        "groq_keys_available": 5,
+        "groq_models": [
+          "groq/llama-3.3-70b-versatile",
+          "groq/llama-3.1-70b-versatile",
+          "groq/llama-3.1-8b-instant"
+        ],
+        "groq_total_slots": 15,
+        "current_model": "groq/llama-3.3-70b-versatile",
+        "current_api_key_index": 0,
+        "tavily_available": true
+      }
+    },
+    "database": {
+      "status": "connected",
+      "users": 6,
+      "organizations": 13,
+      "sessions": 44
+    }
+  }
+}
