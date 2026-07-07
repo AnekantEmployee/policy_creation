@@ -305,6 +305,12 @@ def consolidate_policies(
                 org_name, selected_frameworks, policies
             )
         
+        # Regenerate master_policy_id to avoid UNIQUE constraint violations
+        # (LLM generates MASTER-2026-001, which conflicts on second run)
+        import uuid
+        unique_suffix = str(uuid.uuid4())[:8].upper()
+        consolidated_data["master_policy_id"] = f"MASTER-{datetime.now().year}-{unique_suffix}"
+        
         # Validate consolidation output
         if not _validate_consolidated_policy(consolidated_data):
             logger.warning("⚠ Consolidated policy validation failed, using fallback")
@@ -401,8 +407,12 @@ def _create_fallback_consolidated_policy(
         }
         domains_map[domain]["integrated_requirements"].append(req)
     
+    # Generate unique master_policy_id using timestamp to avoid UNIQUE constraint violations
+    import uuid
+    unique_suffix = str(uuid.uuid4())[:8].upper()
+    
     return {
-        "master_policy_id": f"MASTER-{today.year}-001",
+        "master_policy_id": f"MASTER-{today.year}-{unique_suffix}",
         "title": f"Unified Compliance Master Policy — {org_name}",
         "executive_summary": (
             f"This master policy consolidates requirements from {len(selected_frameworks)} "
