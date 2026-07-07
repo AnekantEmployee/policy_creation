@@ -35,11 +35,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from contextlib import asynccontextmanager
 import asyncio
+import io
 from datetime import datetime, timedelta
 from typing import Optional, List
 from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy import desc
+from docx.shared import RGBColor
 
 from config.frameworks import FRAMEWORKS, get_all_frameworks
 from config.llm_config import get_llm_with_fallback
@@ -59,6 +61,7 @@ from db.models import Session, Organization, User, UserRole
 from agents.org_profiler import profile_organization
 from agents.policy_generator import generate_policies, POLICY_TYPES as POLICY_TYPE_DEFS
 from agents.procedure_generator import generate_procedures, PROCEDURE_TYPES as PROCEDURE_TYPE_DEFS
+from agents.policy_consolidator import consolidate_policies
 from export.docx_builder import build_compliance_docx
 
 # ─── App Setup ────────────────────────────────────────────────────────────────
@@ -108,6 +111,48 @@ def _run_pending_migrations(db: DBSession):
             logger.info("✓ Migration complete: personalization_data column added")
         else:
             logger.debug("✓ personalization_data column already exists")
+        
+        # Migration 2: Add master_policies table if it doesn't exist
+        result = db.execute(
+            text("""
+            SELECT COUNT(*) FROM sqlite_master 
+            WHERE type='table' AND name='master_policies'
+            """)
+        ).scalar()
+        
+        if result == 0:
+            logger.info("Running migration: Creating master_policies table...")
+            db.execute(text("""
+                CREATE TABLE master_policies (
+                    id              INTEGER PRIMARY KEY,
+                    session_id      INTEGER NOT NULL,
+                    master_policy_id VARCHAR(128) NOT NULL UNIQUE,
+                    title           VARCHAR(512) NOT NULL,
+                    version         VARCHAR(16) DEFAULT '1.0',
+                    executive_summary TEXT,
+                    aligned_frameworks JSON DEFAULT '[]',
+                    consolidation_notes TEXT,
+                    domains         JSON DEFAULT '[]',
+                    compliance_matrix JSON DEFAULT '[]',
+                    implementation_roadmap JSON DEFAULT '[]',
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(session_id) REFERENCES sessions(id)
+                )
+            """))
+            db.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_master_policies_session_id
+                ON master_policies(session_id)
+            """))
+            db.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_master_policies_id
+                ON master_policies(master_policy_id)
+            """))
+            db.commit()
+            logger.info("✓ Migration complete: master_policies table created")
+        else:
+            logger.debug("✓ master_policies table already exists")
+            
     except Exception as e:
         logger.warning(f"⚠️  Migration check failed: {e}")
         db.rollback()
@@ -1215,6 +1260,354 @@ async def export_session_docx(
     except Exception as e:
         logger.error(f"❌ Session DOCX export failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+# ─── Master Policy Consolidation ──────────────────────────────────────────────
+
+@app.post("/policies/consolidate", tags=["Master Policy"])
+async def consolidate_session_policies(
+    body: dict,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(require_write_access),
+):
+    """
+    Consolidate all policies from a session into a single unified master policy.
+    This policy is aligned with all selected frameworks and organized by domain.
+    
+    Request body:
+      {
+        "session_id": 42,
+        "regenerate": false  # if true, deletes existing master policy and recreates
+      }
+    """
+    session_id = body.get("session_id")
+    regenerate = body.get("regenerate", False)
+    
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    
+    try:
+        # Get session
+        session = crud.get_session(db, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Get policies for session
+        policies = crud.get_policies_for_session(db, session_id)
+        if not policies:
+            raise HTTPException(status_code=400, detail="No policies found for this session")
+        
+        # If regenerate is true, delete existing master policy
+        if regenerate:
+            logger.info(f"🔄 Regenerating master policy for session {session_id}")
+            crud.delete_master_policy_for_session(db, session_id)
+            db.commit()
+        else:
+            # Check if master policy already exists
+            existing = crud.get_master_policy_for_session(db, session_id)
+            if existing:
+                logger.info(f"✓ Master policy already exists for session {session_id}")
+                return {
+                    "master_policy_id": existing.master_policy_id,
+                    "title": existing.title,
+                    "message": "Master policy already consolidated. Set regenerate=true to recreate.",
+                    "domains_count": len(existing.domains),
+                    "frameworks": existing.aligned_frameworks,
+                }
+        
+        logger.info(f"🔄 Consolidating {len(policies)} policies from session {session_id}")
+        
+        # Convert policies to dict format
+        policies_dicts = [
+            {
+                "policy_id": p.policy_id,
+                "framework": p.framework,
+                "policy_type": p.policy_type,
+                "title": p.title,
+                "version": p.version,
+                "sections": p.sections or [],
+                "owner": p.owner,
+            }
+            for p in policies
+        ]
+        
+        # Call consolidator in thread pool
+        consolidated = await asyncio.get_running_loop().run_in_executor(
+            executor,
+            consolidate_policies,
+            session.organization.name or session.organization.description,
+            session.organization.description,
+            session.selected_frameworks,
+            policies_dicts,
+            None,  # org_context
+            session.personalization_data,
+        )
+        
+        if not consolidated:
+            raise HTTPException(status_code=500, detail="Policy consolidation failed")
+        
+        # Save master policy to database
+        master = crud.save_master_policy(db, session_id, consolidated)
+        db.commit()
+        
+        logger.info(f"✓ Master policy consolidated and saved: {master.master_policy_id}")
+        
+        return {
+            "master_policy_id": master.master_policy_id,
+            "title": master.title,
+            "frameworks": master.aligned_frameworks,
+            "domains_count": len(master.domains),
+            "executive_summary": master.executive_summary,
+            "created_at": master.created_at.isoformat() if master.created_at else None,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Policy consolidation failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Consolidation failed: {str(e)}")
+
+
+@app.get("/policies/master/{session_id}", tags=["Master Policy"])
+async def get_master_policy(
+    session_id: int,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(require_read_access),
+):
+    """
+    Retrieve the consolidated master policy for a session.
+    """
+    try:
+        session = crud.get_session(db, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        master = crud.get_master_policy_for_session(db, session_id)
+        if not master:
+            raise HTTPException(status_code=404, detail="No master policy found. Run consolidation first.")
+        
+        return {
+            "master_policy_id": master.master_policy_id,
+            "title": master.title,
+            "version": master.version,
+            "executive_summary": master.executive_summary,
+            "aligned_frameworks": master.aligned_frameworks,
+            "consolidation_notes": master.consolidation_notes,
+            "domains": master.domains,
+            "compliance_matrix": master.compliance_matrix,
+            "implementation_roadmap": master.implementation_roadmap,
+            "created_at": master.created_at.isoformat() if master.created_at else None,
+            "updated_at": master.updated_at.isoformat() if master.updated_at else None,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to retrieve master policy: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve master policy: {str(e)}")
+
+
+@app.post("/export/master-policy/{session_id}/docx", tags=["Master Policy"])
+async def export_master_policy_docx(
+    session_id: int,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(require_read_access),
+):
+    """
+    Export the consolidated master policy as a professional DOCX file.
+    """
+    try:
+        session = crud.get_session(db, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        master = crud.get_master_policy_for_session(db, session_id)
+        if not master:
+            raise HTTPException(status_code=404, detail="No master policy found. Run consolidation first.")
+        
+        # For master policy export, we create a specialized export
+        # Convert master policy to document format
+        org_name = session.organization.name or session.organization.description
+        
+        docx_bytes = await asyncio.get_running_loop().run_in_executor(
+            executor,
+            _build_master_policy_docx,
+            org_name,
+            master.aligned_frameworks,
+            master.model_dump() if hasattr(master, 'model_dump') else {
+                "master_policy_id": master.master_policy_id,
+                "title": master.title,
+                "version": master.version,
+                "executive_summary": master.executive_summary,
+                "aligned_frameworks": master.aligned_frameworks,
+                "consolidation_notes": master.consolidation_notes,
+                "domains": master.domains,
+                "compliance_matrix": master.compliance_matrix,
+                "implementation_roadmap": master.implementation_roadmap,
+            },
+        )
+        
+        safe_name = org_name.replace(" ", "_").replace("/", "-")[:40]
+        filename = f"{safe_name}_master_policy.docx"
+        logger.info(f"✓ Master policy DOCX export: {filename} ({len(docx_bytes):,} bytes)")
+        
+        return Response(
+            content=docx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Master policy export failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+def _build_master_policy_docx(org_name: str, frameworks: list, master_policy: dict) -> bytes:
+    """Build a professional DOCX for the master policy."""
+    from export.docx_builder import (
+        _build_cover_page, _build_revision_history, _add_horizontal_rule,
+        DARK_BLUE, MID_BLUE, LIGHT_BLUE, TABLE_FILL, WHITE, Pt, 
+        WD_ALIGN_PARAGRAPH, WD_TABLE_ALIGNMENT, Document, _set_cell_bg, _cell_text,
+    )
+    
+    doc = Document()
+    
+    # ─── Cover Page ────────────────────────────────────────────────────────────
+    _build_cover_page(doc, org_name, frameworks, datetime.now().strftime("%d %B %Y"))
+    
+    # ─── Master Policy Title Page ────────────────────────────────────────────────
+    title = doc.add_heading("Master Compliance Policy", level=1)
+    title.runs[0].font.color.rgb = DARK_BLUE
+    
+    subtitle = doc.add_paragraph(master_policy.get("title", "Unified Compliance Policy"))
+    subtitle_run = subtitle.runs[0]
+    subtitle_run.font.size = Pt(14)
+    subtitle_run.font.color.rgb = MID_BLUE
+    
+    doc.add_paragraph()  # spacing
+    
+    # Executive Summary
+    if master_policy.get("executive_summary"):
+        summary_heading = doc.add_heading("Executive Summary", level=2)
+        summary_heading.runs[0].font.color.rgb = MID_BLUE
+        summary_para = doc.add_paragraph(master_policy["executive_summary"])
+        for run in summary_para.runs:
+            run.font.size = Pt(10)
+        doc.add_paragraph()
+    
+    # Frameworks
+    frameworks_heading = doc.add_heading("Aligned Frameworks", level=2)
+    frameworks_heading.runs[0].font.color.rgb = MID_BLUE
+    frameworks_para = doc.add_paragraph(", ".join(master_policy.get("aligned_frameworks", [])))
+    for run in frameworks_para.runs:
+        run.font.size = Pt(11)
+        run.bold = True
+    
+    doc.add_page_break()
+    
+    # ─── Domains and Requirements ───────────────────────────────────────────────
+    for domain in master_policy.get("domains", []):
+        domain_heading = doc.add_heading(domain.get("domain_name", "Domain"), level=2)
+        domain_heading.runs[0].font.color.rgb = MID_BLUE
+        
+        # Domain description
+        if domain.get("domain_description"):
+            desc_para = doc.add_paragraph(domain["domain_description"])
+            for run in desc_para.runs:
+                run.font.size = Pt(10)
+                run.italic = True
+        
+        # Integrated requirements
+        for req in domain.get("integrated_requirements", []):
+            req_heading = doc.add_heading(req.get("title", "Requirement"), level=3)
+            req_heading.runs[0].font.color.rgb = RGBColor(0x44, 0x72, 0xC4)
+            
+            # Requirement details table
+            req_table = doc.add_table(rows=5, cols=2)
+            req_table.style = "Table Grid"
+            
+            details = [
+                ("Requirement ID", req.get("requirement_id", "")),
+                ("Frameworks", ", ".join(req.get("frameworks", []))),
+                ("Framework References", "; ".join(req.get("framework_references", []))),
+                ("Responsibility", req.get("responsibility", "")),
+                ("Mandatory", "Yes" if req.get("is_mandatory") else "No"),
+            ]
+            
+            for i, (label, value) in enumerate(details):
+                _set_cell_bg(req_table.rows[i].cells[0], LIGHT_BLUE)
+                _cell_text(req_table.rows[i].cells[0], label, bold=True, size=9, colour=DARK_BLUE)
+                _cell_text(req_table.rows[i].cells[1], value, size=9)
+            
+            # Description
+            if req.get("description"):
+                desc_heading = doc.add_heading("Description", level=4)
+                desc_heading.runs[0].font.color.rgb = RGBColor(0x70, 0x70, 0x70)
+                desc_para = doc.add_paragraph(req["description"])
+                for run in desc_para.runs:
+                    run.font.size = Pt(10)
+            
+            # Implementation steps
+            if req.get("implementation_steps"):
+                steps_heading = doc.add_heading("Implementation Steps", level=4)
+                steps_heading.runs[0].font.color.rgb = RGBColor(0x70, 0x70, 0x70)
+                for step in req["implementation_steps"]:
+                    step_para = doc.add_paragraph(step, style="List Number")
+                    for run in step_para.runs:
+                        run.font.size = Pt(10)
+            
+            doc.add_paragraph()  # spacing
+    
+    # ─── Compliance Matrix ──────────────────────────────────────────────────────
+    if master_policy.get("compliance_matrix"):
+        doc.add_page_break()
+        matrix_heading = doc.add_heading("Compliance Control Matrix", level=1)
+        matrix_heading.runs[0].font.color.rgb = DARK_BLUE
+        
+        matrix_data = master_policy["compliance_matrix"]
+        if matrix_data:
+            # Build matrix table
+            headers = ["Control Name"] + list(set([k for row in matrix_data for k in row.keys() if k != "control_name"]))
+            matrix_table = doc.add_table(rows=1 + len(matrix_data), cols=len(headers))
+            matrix_table.style = "Table Grid"
+            
+            # Header row
+            for i, header in enumerate(headers):
+                _set_cell_bg(matrix_table.rows[0].cells[i], DARK_BLUE)
+                _cell_text(matrix_table.rows[0].cells[i], header, bold=True, size=9, colour=WHITE, align=WD_ALIGN_PARAGRAPH.CENTER)
+            
+            # Data rows
+            for row_idx, row_data in enumerate(matrix_data):
+                for col_idx, header in enumerate(headers):
+                    value = row_data.get(header, "") if header != "control_name" else row_data.get("control_name", "")
+                    _cell_text(matrix_table.rows[row_idx + 1].cells[col_idx], value, size=9)
+    
+    # ─── Implementation Roadmap ─────────────────────────────────────────────────
+    if master_policy.get("implementation_roadmap"):
+        doc.add_page_break()
+        roadmap_heading = doc.add_heading("Implementation Roadmap", level=1)
+        roadmap_heading.runs[0].font.color.rgb = DARK_BLUE
+        
+        for phase in master_policy["implementation_roadmap"]:
+            phase_heading = doc.add_heading(
+                f"Phase {phase.get('phase')}: {phase.get('focus')}",
+                level=2
+            )
+            phase_heading.runs[0].font.color.rgb = MID_BLUE
+            
+            doc.add_paragraph(f"Duration: {phase.get('duration')}")
+            
+            if phase.get("controls"):
+                controls_heading = doc.add_heading("Key Controls", level=3)
+                for control in phase["controls"]:
+                    doc.add_paragraph(control, style="List Bullet")
+    
+    # Convert to bytes
+    docx_buffer = io.BytesIO()
+    doc.save(docx_buffer)
+    return docx_buffer.getvalue()
 
 
 # ─── Personalization Questions ────────────────────────────────────────────────

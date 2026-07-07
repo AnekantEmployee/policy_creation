@@ -6,7 +6,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy import desc
 
-from db.models import Organization, Session, Policy, Procedure
+from db.models import Organization, Session, Policy, Procedure, MasterPolicy
 
 
 # ─── Organization ─────────────────────────────────────────────────────────────
@@ -147,6 +147,38 @@ def save_procedures(db: DBSession, session_id: int, procedures_response: dict):
 
 def get_procedures_for_session(db: DBSession, session_id: int) -> List[Procedure]:
     return db.query(Procedure).filter(Procedure.session_id == session_id).all()
+
+
+# ─── Master Policy ────────────────────────────────────────────────────────────
+
+def save_master_policy(db: DBSession, session_id: int, master_policy_data: dict):
+    """Save the consolidated master policy."""
+    master = MasterPolicy(
+        session_id=session_id,
+        master_policy_id=master_policy_data.get("master_policy_id", "MASTER-UNKNOWN"),
+        title=master_policy_data.get("title", "Master Policy"),
+        version=master_policy_data.get("version", "1.0"),
+        executive_summary=master_policy_data.get("executive_summary"),
+        aligned_frameworks=master_policy_data.get("aligned_frameworks", []),
+        consolidation_notes=master_policy_data.get("consolidation_notes"),
+        domains=master_policy_data.get("domains", []),
+        compliance_matrix=master_policy_data.get("compliance_matrix", []),
+        implementation_roadmap=master_policy_data.get("implementation_roadmap", []),
+    )
+    db.add(master)
+    db.flush()
+    return master
+
+
+def get_master_policy_for_session(db: DBSession, session_id: int) -> Optional:
+    """Retrieve the master policy for a session."""
+    return db.query(MasterPolicy).filter(MasterPolicy.session_id == session_id).first()
+
+
+def delete_master_policy_for_session(db: DBSession, session_id: int):
+    """Delete master policy for a session (for regeneration)."""
+    db.query(MasterPolicy).filter(MasterPolicy.session_id == session_id).delete()
+    db.flush()
 
 
 # ─── History (for frontend) ───────────────────────────────────────────────────

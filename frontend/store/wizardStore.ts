@@ -8,6 +8,7 @@ import type {
   PersonalizationQuestion,
   WizardPhase,
 } from '@/types';
+import type { MasterPolicyResponse } from '@/api/masterPolicy';
 
 // Per-framework doc type config — separate policy/procedure selections per framework
 export interface FrameworkDocConfig {
@@ -67,6 +68,15 @@ interface WizardState {
   procedures: GeneratedProcedure[];
   setResults: (pol: GeneratedPolicy[], proc: GeneratedProcedure[]) => void;
 
+  // Master Policy
+  masterPolicy: MasterPolicyResponse | null;
+  consolidationStatus: 'idle' | 'loading' | 'success' | 'error';
+  consolidationError: string | null;
+  setMasterPolicy: (policy: MasterPolicyResponse | null) => void;
+  setConsolidationStatus: (status: 'idle' | 'loading' | 'success' | 'error') => void;
+  setConsolidationError: (error: string | null) => void;
+  clearMasterPolicy: () => void;
+
   // Regenerate — load from a saved session without re-entering org info
   loadFromSession: (sessionId: number, orgName: string, orgDescription: string, frameworks: string[]) => void;
 
@@ -83,6 +93,7 @@ const DEFAULT: Omit<WizardState,
   'setFrameworkDocConfigs' | 'setDocTypes' |
   'setConvPersonalizeAnswers' | 'setConvPersonalizeHistory' | 'mergeConvPersonalizeAnswers' |
   'setQuestions' | 'setAnswer' | 'nextQuestion' | 'previousQuestion' | 'removeCurrentAnswer' | 'setResults' |
+  'setMasterPolicy' | 'setConsolidationStatus' | 'setConsolidationError' | 'clearMasterPolicy' |
   'loadFromSession' | 'reset'
 > = {
   phase: 'org_info',
@@ -97,6 +108,9 @@ const DEFAULT: Omit<WizardState,
   convPersonalizeHistory: [],
   questions: [], answers: {}, questionIndex: 0,
   policies: [], procedures: [],
+  masterPolicy: null,
+  consolidationStatus: 'idle',
+  consolidationError: null,
 };
 
 export const useWizardStore = create<WizardState>()(
@@ -142,6 +156,10 @@ export const useWizardStore = create<WizardState>()(
           return { questionIndex: Math.max(0, s.questionIndex - 1) };
         }),
       setResults: (policies, procedures) => set({ policies, procedures }),
+      setMasterPolicy: (masterPolicy) => set({ masterPolicy, consolidationStatus: 'success' }),
+      setConsolidationStatus: (consolidationStatus) => set({ consolidationStatus }),
+      setConsolidationError: (consolidationError) => set({ consolidationError }),
+      clearMasterPolicy: () => set({ masterPolicy: null, consolidationStatus: 'idle', consolidationError: null }),
       loadFromSession: (sessionId, orgName, orgDescription, frameworks) =>
         set({
           ...DEFAULT,

@@ -97,6 +97,7 @@ class Session(Base):
     organization = relationship("Organization", back_populates="sessions")
     policies     = relationship("Policy",    back_populates="session", cascade="all, delete-orphan")
     procedures   = relationship("Procedure", back_populates="session", cascade="all, delete-orphan")
+    master_policies = relationship("MasterPolicy", back_populates="session", cascade="all, delete-orphan")
 
 
 class Policy(Base):
@@ -138,3 +139,24 @@ class Procedure(Base):
     created_at      = Column(DateTime,    default=datetime.utcnow)
 
     session = relationship("Session", back_populates="procedures")
+
+
+class MasterPolicy(Base):
+    """Unified, consolidated master policy aligned to all selected frameworks"""
+    __tablename__ = "master_policies"
+
+    id                      = Column(Integer, primary_key=True, index=True)
+    session_id              = Column(Integer, ForeignKey("sessions.id"), nullable=False, index=True)
+    master_policy_id        = Column(String(128), nullable=False, unique=True, index=True)
+    title                   = Column(String(512), nullable=False)
+    version                 = Column(String(16), default="1.0")
+    executive_summary       = Column(Text, nullable=True)
+    aligned_frameworks      = Column(JSON, default=list)  # list of framework IDs
+    consolidation_notes     = Column(Text, nullable=True)
+    domains                 = Column(JSON, default=list)  # list of domain objects with requirements
+    compliance_matrix       = Column(JSON, default=list)  # framework vs control matrix
+    implementation_roadmap  = Column(JSON, default=list)  # phased rollout plan
+    created_at              = Column(DateTime, default=datetime.utcnow)
+    updated_at              = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    session = relationship("Session", back_populates="master_policies")

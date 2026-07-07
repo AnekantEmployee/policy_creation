@@ -225,3 +225,48 @@ class SystemStatus(BaseModel):
     tavily_available: bool
     supported_frameworks: List[str]
     version: str = "1.0.0"
+
+
+# ─── Master Policy Consolidation ──────────────────────────────────────────────
+
+class ConsolidatedRequirement(BaseModel):
+    requirement_id: str
+    title: str
+    description: str
+    frameworks: List[str]
+    framework_references: List[str] = []
+    is_mandatory: bool = True
+    max_penalty: Optional[str] = None
+    implementation_steps: List[str] = []
+    responsibility: str
+
+
+class ConsolidatedDomain(BaseModel):
+    domain_name: str
+    domain_description: str
+    integrated_requirements: List[ConsolidatedRequirement] = []
+
+
+class ComplianceMatrixRow(BaseModel):
+    control_name: str
+    requirements: Dict[str, str] = {}  # framework -> status mapping
+
+
+class ImplementationPhase(BaseModel):
+    phase: int
+    duration: str
+    focus: str
+    controls: List[str] = []
+
+
+class MasterPolicyResponse(BaseModel):
+    master_policy_id: str
+    title: str
+    version: str = "1.0"
+    executive_summary: str
+    aligned_frameworks: List[str]
+    consolidation_notes: str
+    domains: List[ConsolidatedDomain]
+    compliance_matrix: List[ComplianceMatrixRow] = []
+    implementation_roadmap: List[ImplementationPhase] = []
+    created_at: Optional[str] = None

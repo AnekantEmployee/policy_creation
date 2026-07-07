@@ -57,3 +57,8 @@ migrate_add_personalization.py
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Tests & Test Reports
+backend/tests/test_*.py
+backend/tests/*_TEST_REPORT.md
+backend/agents/*_QUICK_FIX_GUIDE.md

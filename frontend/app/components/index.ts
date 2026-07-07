@@ -8,3 +8,8 @@ export { Sidebar, SidebarToggle } from './Sidebar';
 export { MainContent } from './MainContent';
 export { Modal } from './Modal';
 export { Tabs } from './Tabs';
+export { MasterPolicyCard } from './MasterPolicyCard';
+export { MasterPolicyViewer } from './MasterPolicyViewer';
+export { ComplianceMatrix } from './ComplianceMatrix';
+export { ImplementationRoadmap } from './ImplementationRoadmap';
+export { MasterPolicyTabs } from './MasterPolicyTabs';

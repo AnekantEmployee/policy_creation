@@ -58,11 +58,13 @@ function FieldInput({
     <div className={`flex items-center rounded-lg border-2 bg-neutral-50 focus-within:bg-white transition-colors ${
       error ? 'border-red-400' : 'border-neutral-200 focus-within:border-primary-500'
     }`}>
-      <span className="pl-3 text-neutral-400 shrink-0">{icon}</span>
+      {/* suppressHydrationWarning prevents noise from browser extensions (e.g. Dark Reader)
+          injecting attributes onto SVG elements inside these spans */}
+      <span className="pl-3 text-neutral-400 shrink-0" suppressHydrationWarning>{icon}</span>
       <div className="flex-1 [&_input]:w-full [&_input]:px-2 [&_input]:py-2 [&_input]:text-sm [&_input]:bg-transparent [&_input]:outline-none">
         {children}
       </div>
-      {suffix && <span className="pr-2 shrink-0">{suffix}</span>}
+      {suffix && <span className="pr-2 shrink-0" suppressHydrationWarning>{suffix}</span>}
     </div>
   );
 }
@@ -75,7 +77,7 @@ function PendingApproval({ email, onBack }: { email: string; onBack: () => void 
       <Card>
         <CardBody className="p-8 text-center space-y-5">
           <div className="flex justify-center">
-            <div className="h-14 w-14 rounded-full bg-amber-100 flex items-center justify-center">
+            <div className="h-14 w-14 rounded-full bg-amber-100 flex items-center justify-center" suppressHydrationWarning>
               <Clock className="h-7 w-7 text-amber-600" />
             </div>
           </div>
@@ -229,7 +231,7 @@ function AuthPageInner() {
 
           {/* Form-level error */}
           {errors.form && (
-            <div className="flex gap-3 p-3 rounded-lg bg-red-50 border border-red-200">
+            <div className="flex gap-3 p-3 rounded-lg bg-red-50 border border-red-200" suppressHydrationWarning>
               <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
               <p className="text-sm text-red-700">{errors.form}</p>
             </div>
@@ -373,7 +375,7 @@ function AuthPageInner() {
                 </FieldInput>
               </Field>
 
-              <div className="flex gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200">
+              <div className="flex gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200" suppressHydrationWarning>
                 <CheckCircle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
                 <p className="text-xs text-blue-700">
                   New accounts require admin approval before you can sign in.

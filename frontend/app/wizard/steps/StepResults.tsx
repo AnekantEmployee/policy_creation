@@ -5,10 +5,12 @@ import { useWizardStore } from '@/store/wizardStore';
 import { Button } from '@/app/components/Button';
 import { Badge } from '@/app/components/Badge';
 import { Card, CardBody, CardHeader } from '@/app/components/Card';
-import { FileText, Zap, ChevronDown, ChevronRight, RefreshCw, Download, Clock, RotateCcw } from 'lucide-react';
+import { MasterPolicyCard, MasterPolicyTabs } from '@/app/components';
+import { FileText, Zap, ChevronDown, ChevronRight, RefreshCw, Download, Clock, RotateCcw, Crown } from 'lucide-react';
 import type { GeneratedPolicy, GeneratedProcedure, HistorySession } from '@/types';
 import { downloadWizardDocx } from '@/api/export';
 import { historyApi } from '@/api/history';
+import { masterPolicyApi } from '@/api/masterPolicy';
 import toast from 'react-hot-toast';
 
 // ── Policy card ───────────────────────────────────────────────────────────────
@@ -288,23 +290,57 @@ const RegenerateModal: React.FC<{
 
 // ── Main results page ─────────────────────────────────────────────────────────
 export const StepResults: React.FC = () => {
-  const { policies, procedures, orgName, selectedGenFrameworks, answers, questions, sessionId, setResults, reset } = useWizardStore();
-  const [tab, setTab] = useState<string>('');
+  const { 
+    policies, procedures, orgName, selectedGenFrameworks, answers, questions, sessionId, 
+    setResults, reset,
+    masterPolicy, setMasterPolicy, setConsolidationStatus, setConsolidationError, consolidationStatus, consolidationError,
+  } = useWizardStore();
+  const [tab, setTab] = useState<'master' | 'frameworks'>('master');
+  const [frameworkTab, setFrameworkTab] = useState<string>('');
   const [subTab, setSubTab] = useState<'policies' | 'procedures'>('policies');
   const [downloading, setDownloading] = useState(false);
   const [showRegenerate, setShowRegenerate] = useState(false);
+  const [exportingMaster, setExportingMaster] = useState(false);
 
-  // Initialize tab to first framework
+  // Initialize framework tab to first framework
   useEffect(() => {
-    if (!tab && (policies.length > 0 || procedures.length > 0)) {
+    if (!frameworkTab && (policies.length > 0 || procedures.length > 0)) {
       const frameworks = new Set([
         ...policies.map(p => p.framework),
         ...procedures.map(p => p.framework)
       ]);
       const firstFw = Array.from(frameworks).sort()[0];
-      setTab(firstFw || 'policies');
+      setFrameworkTab(firstFw || 'policies');
     }
   }, [policies.length, procedures.length]);
+
+  const handleConsolidate = async () => {
+    if (!sessionId) {
+      toast.error('No session found');
+      return;
+    }
+
+    setConsolidationStatus('loading');
+    setConsolidationError(null);
+    
+    try {
+      const response = await masterPolicyApi.consolidate({
+        session_id: sessionId,
+        regenerate: !!masterPolicy, // regenerate if already exists
+      });
+
+      // Fetch the full master policy
+      const fullPolicy = await masterPolicyApi.get(sessionId);
+      setMasterPolicy(fullPolicy);
+      setConsolidationStatus('success');
+      toast.success('Master policy consolidated successfully');
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Consolidation failed';
+      setConsolidationError(errorMsg);
+      setConsolidationStatus('error');
+      toast.error(errorMsg);
+    }
+  };
 
   const downloadAll = async () => {
     setDownloading(true);
@@ -315,6 +351,31 @@ export const StepResults: React.FC = () => {
       toast.error('Download failed — try again');
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const downloadMasterPolicy = async () => {
+    if (!sessionId) {
+      toast.error('No session found');
+      return;
+    }
+
+    setExportingMaster(true);
+    try {
+      const blob = await masterPolicyApi.exportDocx(sessionId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${orgName.replace(/\s+/g, '_')}_master_policy.docx`;
+      document.body.appendChild(a);
+      a.click();
+      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success('Master policy exported successfully');
+    } catch (error) {
+      toast.error('Export failed — try again');
+    } finally {
+      setExportingMaster(false);
     }
   };
 
@@ -372,14 +433,55 @@ export const StepResults: React.FC = () => {
         ))}
       </div>
 
+      {/* Master Policy Section */}
+      <div className="space-y-3">
+        <MasterPolicyCard
+          masterPolicy={masterPolicy}
+          isLoading={consolidationStatus === 'loading'}
+          onConsolidate={handleConsolidate}
+          onDownload={masterPolicy ? downloadMasterPolicy : undefined}
+        />
+      </div>
+
+      {/* Master Policy Display */}
+      {masterPolicy && consolidationStatus !== 'loading' && (
+        <MasterPolicyTabs masterPolicy={masterPolicy} />
+      )}
+
+      {consolidationError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+          <p className="text-sm font-medium text-red-700">Consolidation Error</p>
+          <p className="text-xs text-red-600 mt-1">{consolidationError}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleConsolidate}
+            className="mt-3"
+          >
+            Retry Consolidation
+          </Button>
+        </div>
+      )}
+
       {/* Action buttons */}
-      <div className="flex gap-3">
-        <Button variant="primary" fullWidth size="lg" icon={<Download className="h-5 w-5" />}
-          onClick={downloadAll} disabled={downloading}>
-          {downloading ? 'Generating DOCX…' : 'Download Complete Package (.docx)'}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <Button
+          variant="primary"
+          fullWidth
+          size="lg"
+          icon={<Download className="h-5 w-5" />}
+          onClick={downloadAll}
+          disabled={downloading}
+        >
+          {downloading ? 'Generating DOCX…' : 'Download All Frameworks Package (.docx)'}
         </Button>
-        <Button variant="outline" size="lg" icon={<RefreshCw className="h-5 w-5" />}
-          onClick={() => setShowRegenerate(true)} title="Regenerate with different options">
+        <Button
+          variant="outline"
+          size="lg"
+          icon={<RefreshCw className="h-5 w-5" />}
+          onClick={() => setShowRegenerate(true)}
+          title="Regenerate with different options"
+        >
           Regenerate
         </Button>
       </div>
@@ -404,7 +506,7 @@ export const StepResults: React.FC = () => {
         </Card>
       )}
 
-      {/* Framework Tabs (horizontal) */}
+      {/* Individual Frameworks Tab */}
       {(policies.length > 0 || procedures.length > 0) && (() => {
         const allFrameworks = new Set([
           ...policies.map(p => p.framework),
@@ -414,30 +516,34 @@ export const StepResults: React.FC = () => {
 
         return (
           <div className="space-y-4">
-            {/* Framework tabs - horizontal */}
-            <div className="flex border-b border-neutral-200 gap-2 overflow-x-auto">
-              {frameworks.map((fw) => (
-                <button
-                  key={fw}
-                  onClick={() => {
-                    setTab(fw);
-                    setSubTab('policies'); // Reset subtab when switching frameworks
-                  }}
-                  className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
-                    tab === fw
-                      ? 'text-primary-600 border-primary-600'
-                      : 'text-neutral-500 border-transparent hover:text-neutral-700'
-                  }`}
-                >
-                  {fw}
-                </button>
-              ))}
+            <div className="border-b border-neutral-200 pb-4">
+              <p className="text-sm font-semibold text-neutral-700 mb-3">Individual Framework Policies & Procedures</p>
+              
+              {/* Framework tabs - horizontal */}
+              <div className="flex border-b border-neutral-200 gap-2 overflow-x-auto">
+                {frameworks.map((fw) => (
+                  <button
+                    key={fw}
+                    onClick={() => {
+                      setFrameworkTab(fw);
+                      setSubTab('policies');
+                    }}
+                    className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
+                      frameworkTab === fw
+                        ? 'text-primary-600 border-primary-600'
+                        : 'text-neutral-500 border-transparent hover:text-neutral-700'
+                    }`}
+                  >
+                    {fw}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Subtabs for selected framework (Policies/Procedures) */}
             {(() => {
-              const fwPolicies = policies.filter(p => p.framework === tab);
-              const fwProcedures = procedures.filter(p => p.framework === tab);
+              const fwPolicies = policies.filter(p => p.framework === frameworkTab);
+              const fwProcedures = procedures.filter(p => p.framework === frameworkTab);
 
               return (
                 <div className="space-y-4">
@@ -474,23 +580,23 @@ export const StepResults: React.FC = () => {
                     {subTab === 'policies' && fwPolicies.length > 0 && (
                       <div className="space-y-3">
                         {fwPolicies.map((p, i) => (
-                          <PolicyCard key={`${tab}-pol-${p.policy_type}-${i}`} policy={p} />
+                          <PolicyCard key={`${frameworkTab}-pol-${p.policy_type}-${i}`} policy={p} />
                         ))}
                       </div>
                     )}
                     {subTab === 'policies' && fwPolicies.length === 0 && (
-                      <p className="text-center text-neutral-400 py-8">No policies for {tab}.</p>
+                      <p className="text-center text-neutral-400 py-8">No policies for {frameworkTab}.</p>
                     )}
                     {subTab === 'procedures' && fwProcedures.length > 0 && (
                       <div className="space-y-3">
                         {fwProcedures.map((p, i) => (
-                          <ProcedureCard key={`${tab}-proc-${p.procedure_type}-${i}`} proc={p} />
+                          <ProcedureCard key={`${frameworkTab}-proc-${p.procedure_type}-${i}`} proc={p} />
                         ))}
                       </div>
                     )}
                     {subTab === 'procedures' && fwProcedures.length === 0 && (
                       <div className="text-center py-8 space-y-3">
-                        <p className="text-neutral-400">No procedures for {tab} yet.</p>
+                        <p className="text-neutral-400">No procedures for {frameworkTab} yet.</p>
                         <Button variant="outline" size="sm" icon={<RefreshCw className="h-4 w-4" />}
                           onClick={() => setShowRegenerate(true)}>
                           Generate Procedures Now
